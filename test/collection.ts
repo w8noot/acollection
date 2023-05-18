@@ -40,7 +40,7 @@ describe("Success transfer", async () => {
   });
 
   it("mint", async () => {
-    await collectionInstance.connect(accounts[1]).mintWithoutId(accounts[1].getAddress(), "a", "0x");
+    await collectionInstance.connect(accounts[1]).mint(accounts[1].getAddress(), BN.from(0), "a", "0x");
   });
 
   it("init transfer", async () => {
@@ -97,7 +97,6 @@ describe("Success transfer", async () => {
 
   it("ownership should should change after transfer", async () => {
     const tokenOwner = await collectionInstance.ownerOf(BN.from(0));
-    console.log(tokenOwner);
     expect(tokenOwner).eq(await accounts[2].getAddress())
   });
 });
@@ -128,7 +127,7 @@ describe("Transfer with fraud", async () => {
   });
 
   it("mint", async () => {
-    await collectionInstance.connect(accounts[1]).mintWithoutId(accounts[1].getAddress(), "b", "0x");
+    await collectionInstance.connect(accounts[1]).mint(accounts[1].getAddress(), BN.from(0), "b", "0x");
   });
 
   it("init transfer", async () => {

@@ -117,35 +117,34 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         require(id < tokensLimit, "Mark3dCollection: limit reached");
         _mint(to, id, metaUri, _data);
     }
-
-    /// @dev Mint function without id. Can called only by the owner. Equivalent to mint(to, tokensCount(), metaUri, _data)
-    /// @param to - token receiver
-    /// @param metaUri - metadata uri
-    /// @param _data - additional token data
-    function mintWithoutId(
-        address to,
-        string memory metaUri,
-        bytes memory _data
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256) {
-        require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
-        uint256 id = tokensCount;
-        require(id < tokensLimit, "Mark3dCollection: limit reached");
-        _mint(to, id, metaUri, _data);
-        return id;
-    }
-
-    /// @dev Mint batch of tokens. Can called only by the owner
+    
+    /// @dev Mint batch of tokens without metaUri. Can called only by the owner
     /// @param to - tokens receiver
+    /// @param startId - tokenId of the first token to mint
+    /// @param count - tokens quantity to mint
+    /// @param _data - additional token data list
+    function mintBatchWithoutMeta(address to, uint256 startId, uint256 count, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
+        require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
+        uint256 id = startId;
+        for (uint256 i = 0; i < count; i++) {
+            require(!_exists(id), "Mark3dCollection: token is already minted");
+            _mint(to, id, "", _data[i]);
+            id++;
+        }
+    }
+    
+    /// @dev Attaches metaUri to tokens if was not specified earlier
+    /// @param startId - tokenId of the first token to mint
     /// @param count - tokens quantity to mint
     /// @param metaUris - metadata uri list
-    /// @param _data - additional token data list
-    function mintBatch(address to, uint256 count, string[] memory metaUris, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(count == metaUris.length, "Mark3dCollection: metaUri list length must be equal to count");
-        require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
-        uint256 id = tokensCount;
+    function attachMetaBatch(uint256 startId, uint256 count, string[] memory metaUris) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
+        require(count == metaUris.length, "Mark3dCollection: metaUris list length must be equal to count");
+        uint256 id = startId;
         for (uint256 i = 0; i < count; i++) {
-            require(id < tokensLimit, "Mark3dCollection: limit reached");
-            _mint(to, id, metaUris[i], _data[i]);
+            require(bytes(tokenUris[id]).length == 0, "Mark3dCollection: token's metaUri is not empty");
+            tokenUris[id] = metaUris[i];
             id++;
         }
     }
