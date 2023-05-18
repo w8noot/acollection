@@ -9,11 +9,6 @@ import {
 } from "../typechain-types";
 import "@nomicfoundation/hardhat-chai-matchers";
 
-const genRanHex = (size: number) =>
-  [...Array(size)]
-    .map(() => Math.floor(Math.random() * 16).toString(16))
-    .join("");
-
 describe("Success transfer", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
@@ -21,7 +16,6 @@ describe("Success transfer", async () => {
 
   before(async () => {
     accounts = await ethers.getSigners();
-
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
     const collectionFactory = new ACollection__factory(accounts[0]);
 

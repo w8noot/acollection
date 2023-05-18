@@ -11,11 +11,6 @@ import {
 } from "../typechain-types";
 import "@nomicfoundation/hardhat-chai-matchers";
 
-const genRanHex = (size: number) =>
-  [...Array(size)]
-    .map(() => Math.floor(Math.random() * 16).toString(16))
-    .join("");
-
 describe("Trade token", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
@@ -35,7 +30,7 @@ describe("Trade token", async () => {
       "MARK3D",
       "",
       accounts[1].getAddress(),
-      accounts[3].getAddress(),
+      accounts[2].getAddress(),
       accounts[4].getAddress(),
       "0x",
       fraudDecider.address,
@@ -115,7 +110,7 @@ describe("Trade token with whitelist", async () => {
       "MARK3D",
       "",
       accounts[1].getAddress(),
-      accounts[3].getAddress(),
+      accounts[0].getAddress(), // hardcoded signature was made with this address
       accounts[4].getAddress(),
       "0x",
       fraudDecider.address,
@@ -127,7 +122,7 @@ describe("Trade token with whitelist", async () => {
 
   it("mint", async () => {
     await collectionInstance.connect(accounts[1]).mint(accounts[1].getAddress(), BN.from(0), "a", "0x");
-    await collectionInstance.connect(accounts[1]).mint(accounts[1].getAddress(), BN.from(1), "a", "0x");
+    await collectionInstance.connect(accounts[1]).mintBatchWithoutMeta(accounts[1].getAddress(), BN.from(1), BN.from(1), ["0x"]);
   });
 
   it("approve", async () => {
@@ -145,15 +140,18 @@ describe("Trade token with whitelist", async () => {
       .fulfillOrderWhitelisted(collectionInstance.address, "0xa1", BN.from(0), "0x", {
         value: BN.from(10000)
       });
-    await expect(tx).to.revertedWith("Mark3dExchange: collection doesn't have whitelist");
+    await expect(tx).to.revertedWith("Mark3dCollection: collection doesn't have whitelist");
   });
 
   it("set whitelist", async () => {
     await ethers.provider.send("evm_mine", [start + 5]);
-    await exchangeInstance.connect(accounts[0]).setWhitelistParams(collectionInstance.address, BN.from(start), BN.from(5000))
+    await collectionInstance.connect(accounts[1]).setWhitelistParams(
+      BN.from(start), 
+      BN.from(5000),
+    );
 
-    const deadline = await exchangeInstance.whitelistDeadlines(collectionInstance.address);
-    const discount = await exchangeInstance.whitelistDiscounts(collectionInstance.address);
+    const deadline = await collectionInstance.whitelistDeadline();
+    const discount = await collectionInstance.whitelistDiscount();
     await expect(deadline).to.equal(BN.from(start));
     await expect(discount).to.equal(BN.from(5000));
   });
@@ -165,7 +163,7 @@ describe("Trade token with whitelist", async () => {
       .fulfillOrderWhitelisted(collectionInstance.address, "0xa1", BN.from(0), "0x", {
         value: BN.from(10000)
       });
-    await expect(tx).to.revertedWith("Mark3dExchange: whitelist deadline exceeds");
+    await expect(tx).to.revertedWith("Mark3dCollection: whitelist deadline exceeds");
   });
 
   it("fulfill with whitelist deadline exceeds", async () => {
@@ -184,23 +182,25 @@ describe("Trade token with whitelist", async () => {
   it("set whitelist", async () => {
     await ethers.provider.send("evm_mine", [start + 14]);
 
-    await exchangeInstance.connect(accounts[0]).setWhitelistParams(collectionInstance.address, BN.from(start + 30), BN.from(5000))
+    await collectionInstance.connect(accounts[1])
+      .setWhitelistParams(BN.from(start + 30), BN.from(5000))
 
-    const deadline = await exchangeInstance.whitelistDeadlines(collectionInstance.address);
-    const discount = await exchangeInstance.whitelistDiscounts(collectionInstance.address);
+    const deadline = await collectionInstance.whitelistDeadline();
+    const discount = await collectionInstance.whitelistDiscount();
     await expect(deadline).to.equal(BN.from(start + 30));
     await expect(discount).to.equal(BN.from(5000));
   });
 
   it("invalid signature", async () => {
     await ethers.provider.send("evm_mine", [start + 17]);
+
     const tx = exchangeInstance.connect(accounts[2])
       .fulfillOrderWhitelisted(collectionInstance.address, "0xa1", BN.from(1),
         "0xa05ddc17394905fec70b15fc3209bd972f4dc2a53cb5168a3906a52c423928156e73c24e9915c8b116c6beb9e4b90f941ded6eddcdfbc89eb9f92a52ccf94e551b",
         {
           value: BN.from(10000)
         });
-    await expect(tx).to.revertedWith("Mark3dExchange: whitelist invalid signature");
+    await expect(tx).to.revertedWith("Mark3dCollection: whitelist invalid signature");
 
   });
 
@@ -211,7 +211,7 @@ describe("Trade token with whitelist", async () => {
       .fulfillOrder(collectionInstance.address, "0xa1", BN.from(1), {
         value: BN.from(10000)
       });
-    await expect(tx).to.revertedWith("Mark3dExchange: whitelist period");
+    await expect(tx).to.revertedWith("Mark3dCollection: whitelist period");
   });
 
   it("fullfill whitelist wrong price", async () => {
@@ -224,7 +224,7 @@ describe("Trade token with whitelist", async () => {
           value: BN.from(10000)
         });
 
-    await expect(tx).to.revertedWith("Mark3dExchange: value must equal price with discount");
+    await expect(tx).to.revertedWith("Mark3dCollection: value must equal price with discount");
   })
 
   it("fullfill whitelist success", async () => {

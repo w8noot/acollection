@@ -3,13 +3,17 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import "./IFraudDecider.sol";
 import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
+import "./Whitelist.sol";
 
-contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
+contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, AccessControl {
+    using ECDSA for bytes32;
+    
     /// @dev TokenData - struct with basic token data
     struct TokenData {
         uint256 id;             // token id
@@ -32,6 +36,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         uint256 passwordSetAt;                                  // password set at
     }
 
+    uint256 public constant PERCENT_MULTIPLIER = 10000;
     bytes32 public constant COMMON_WHITELIST_APPROVER_ROLE = keccak256("COMMON_WHITELIST_APPROVER");
     bytes32 public constant UNCOMMON_WHITELIST_APPROVER_ROLE = keccak256("UNCOMMON_WHITELIST_APPROVER");
     address public commonWhitelistApprover;
@@ -55,6 +60,8 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     IFraudDecider private fraudDecider_;                       // fraud decider
     uint256 public finalizeTransferTimeout;                    // Time before transfer finalizes automatically 
     uint256 private salesStartTimestamp;                       // Time when users can start transfer tokens 
+    uint256 public whitelistDeadline;
+    uint256 public whitelistDiscount;                         // 1 - 0.01%
 
     constructor(
         string memory name,
@@ -88,6 +95,14 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         commonWhitelistApprover = _commonWhitelistApprover;
         _grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, _uncommonWhitelistApprover);
         uncommonWhitelistApprover = _uncommonWhitelistApprover;
+    }
+
+    function setWhitelistParams(
+        uint256 deadline,
+        uint256 discount
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        whitelistDeadline = deadline;
+        whitelistDiscount = discount;
     }
 
     /**
@@ -239,11 +254,36 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         bytes calldata publicKey,
         bytes calldata data
     ) external {
+        if (data.length == 0) {
+            // called by `fulfillOrder`
+            require(whitelistDeadline == 0 || whitelistDeadline < block.timestamp, "Mark3dCollection: whitelist period");
+        } else {
+            // called by `fulfillOrderWhitelisted` 
+            Whitelist.Info memory whitelistInfo = Whitelist.decode(data);
+            require(whitelistDeadline != 0, "Mark3dCollection: collection doesn't have whitelist");
+            require(whitelistDeadline > block.timestamp, "Mark3dCollection: whitelist deadline exceeds");
+            uint256 finalPrice = whitelistInfo.price;
+
+            // if tokenId is within free mint range and it's initial purchase
+            if ((tokenId < commonTokensLimit + uncommonTokensLimit) && bytes(tokenUris[tokenId]).length == 0) {
+                address signer = uncommonWhitelistApprover;
+                if (tokenId < commonTokensLimit) {
+                    signer = commonWhitelistApprover;
+                }
+                require(whitelistInfo.address_bytes.toEthSignedMessageHash().recover(whitelistInfo.signature) == signer, "Mark3dCollection: whitelist invalid signature");
+
+                uint256 discount = (whitelistInfo.price*whitelistDiscount)/PERCENT_MULTIPLIER;
+                finalPrice = whitelistInfo.price - discount;
+            }
+            require(whitelistInfo.msgValue == finalPrice, "Mark3dCollection: value must equal price with discount");
+        }
+
         require(publicKey.length > 0, "Mark3dCollection: empty public key");
         TransferInfo storage info = transfers[tokenId];
         require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
         require(_msgSender() == info.initiator, "Mark3dCollection: permission denied");
         require(info.to == address(0), "Mark3dCollection: draft already complete");
+        
         info.to = to;
         info.data = data;
         info.publicKey = publicKey;
