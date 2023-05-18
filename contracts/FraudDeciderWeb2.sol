@@ -9,7 +9,7 @@ contract FraudDeciderWeb2 is IFraudDecider, AccessControl {
     event FraudReported(address collection, uint256 tokenId, string cid, bytes publicKey, bytes privateKey, bytes encryptedPassword);
 
     struct Report {
-        ACollection tokenInstance;
+        IEncryptedFileToken tokenInstance;
         uint256 id;
         string cid;
         bytes publicKey;
@@ -30,7 +30,7 @@ contract FraudDeciderWeb2 is IFraudDecider, AccessControl {
         bytes calldata privateKey,
         bytes calldata encryptedPassword
     ) external returns (bool, bool) {
-        reports[_msgSender()][tokenId] = Report(ACollection(_msgSender()), tokenId, cid, publicKey, privateKey, encryptedPassword);
+        reports[_msgSender()][tokenId] = Report(IEncryptedFileToken(_msgSender()), tokenId, cid, publicKey, privateKey, encryptedPassword);
         emit FraudReported(_msgSender(), tokenId, cid, publicKey, privateKey, encryptedPassword);
         return (false, false);
     }
