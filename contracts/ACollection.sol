@@ -34,6 +34,8 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         bool fraudReported;                                     // if fraud reported while finalizing transfer
         uint256 publicKeySetAt;                                 // public key set at
         uint256 passwordSetAt;                                  // password set at
+        uint256 blockTimestamp;
+        bytes32 blockHash;
     }
 
     uint256 public constant PERCENT_MULTIPLIER = 10000;
@@ -222,7 +224,7 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         require(_isApprovedOrOwner(_msgSender(), tokenId), "Mark3dCollection: caller is not token owner or approved");
         require(transfers[tokenId].initiator == address(0), "Mark3dCollection: transfer for this token was already created");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), _msgSender(), to,
-            callbackReceiver, data, bytes(""), bytes(""), false, 0, 0);
+            callbackReceiver, data, bytes(""), bytes(""), false, 0, 0, 0, 0);
         transferCounts[tokenId]++;
         
         emit TransferInit(tokenId, ownerOf(tokenId), to, transferCounts[tokenId]);
@@ -239,7 +241,7 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         require(transfers[tokenId].initiator == address(0), "Mark3dCollection: transfer for this token was already created");
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > salesStartTimestamp, "Mark3dCollection: transfer can't be done before sales start day");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), ownerOf(tokenId), address(0),
-            callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0);
+            callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0, 0, 0);
         transferCounts[tokenId]++;
         
         emit TransferDraft(tokenId, ownerOf(tokenId), transferCounts[tokenId]);
@@ -288,6 +290,9 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         info.data = data;
         info.publicKey = publicKey;
         info.publicKeySetAt = block.timestamp;
+        info.blockTimestamp = block.timestamp;
+        info.blockHash = blockhash(block.number-1);
+
         emit TransferDraftCompletion(tokenId, to);
         emit TransferPublicKeySet(tokenId, publicKey);
     }
