@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
 import "./IFraudDecider.sol";
 import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
 
-contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
+contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     /// @dev TokenData - struct with basic token data
     struct TokenData {
         uint256 id;             // token id
@@ -32,6 +32,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         uint256 passwordSetAt;                                  // password set at
     }
 
+    bytes32 public constant COMMON_WHITELIST_APPROVER_ROLE = keccak256("COMMON_WHITELIST_APPROVER");
+    bytes32 public constant UNCOMMON_WHITELIST_APPROVER_ROLE = keccak256("UNCOMMON_WHITELIST_APPROVER");
+    address public commonWhitelistApprover;
+    address public uncommonWhitelistApprover;
+
     bytes public collectionData;                               // collection additional data
     string private contractMetaUri;                            // contract-level metadata
     mapping(uint256 => string) public tokenUris;               // mapping of token metadata uri
@@ -49,7 +54,9 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         string memory name,
         string memory symbol,
         string memory _contractMetaUri,
-        address _owner,
+        address _admin,
+        address _commonWhitelistApprover,
+        address _uncommonWhitelistApprover,
         bytes memory _data,
         IFraudDecider _fraudDecider,
         bool _fraudLateDecisionEnabled
@@ -62,13 +69,17 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         fraudLateDecisionEnabled = _fraudLateDecisionEnabled;
         finalizeTransferTimeout = 24 hours;
         salesStartTimestamp = block.timestamp - 1 minutes;
-        _transferOwnership(_owner);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(COMMON_WHITELIST_APPROVER_ROLE, _commonWhitelistApprover);
+        commonWhitelistApprover = _commonWhitelistApprover;
+        _grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, _uncommonWhitelistApprover);
+        uncommonWhitelistApprover = _uncommonWhitelistApprover;
     }
 
     /**
      * @dev See {IERC165-supportsInterface}.
      */
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721Enumerable, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721Enumerable, IERC165, AccessControl) returns (bool) {
         return interfaceId == type(IEncryptedFileToken).interfaceId ||
             super.supportsInterface(interfaceId);
     }
@@ -101,7 +112,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         uint256 id,
         string memory metaUri,
         bytes memory _data
-    ) external onlyOwner {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
         require(id < tokensLimit, "Mark3dCollection: limit reached");
         _mint(to, id, metaUri, _data);
@@ -115,7 +126,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         address to,
         string memory metaUri,
         bytes memory _data
-    ) external onlyOwner returns (uint256) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256) {
         require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
         uint256 id = tokensCount;
         require(id < tokensLimit, "Mark3dCollection: limit reached");
@@ -128,7 +139,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
     /// @param count - tokens quantity to mint
     /// @param metaUris - metadata uri list
     /// @param _data - additional token data list
-    function mintBatch(address to, uint256 count, string[] memory metaUris, bytes[] memory _data) external onlyOwner {
+    function mintBatch(address to, uint256 count, string[] memory metaUris, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(count == metaUris.length, "Mark3dCollection: metaUri list length must be equal to count");
         require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
         uint256 id = tokensCount;
@@ -177,7 +188,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
     ) external {
         require(_isApprovedOrOwner(_msgSender(), tokenId), "Mark3dCollection: caller is not token owner or approved");
         require(transfers[tokenId].initiator == address(0), "Mark3dCollection: transfer for this token was already created");
-        require(owner() == _msgSender() || block.timestamp > salesStartTimestamp, "Mark3dCollection: transfer can't be done before sales start day");
+        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > salesStartTimestamp, "Mark3dCollection: transfer can't be done before sales start day");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), ownerOf(tokenId), address(0),
             callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0);
         transferCounts[tokenId]++;
@@ -331,10 +342,22 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         emit TransferCancellation(tokenId);
     }
 
-    // TODO: change modifyer
     /// @dev function for transferring minting rights for collection
-    function transferOwnership(address to) public virtual override onlyOwner {
-        _transferOwnership(to);
+    function transferAdminRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(DEFAULT_ADMIN_ROLE, to);
+        revokeRole(DEFAULT_ADMIN_ROLE, _msgSender());
+    }
+    
+    function transferCommonWhitelistApproverRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(COMMON_WHITELIST_APPROVER_ROLE, commonWhitelistApprover);
+        grantRole(COMMON_WHITELIST_APPROVER_ROLE, to);
+        commonWhitelistApprover = to;
+    }
+    
+    function transferUncommonWhitelistApproverRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(UNCOMMON_WHITELIST_APPROVER_ROLE, uncommonWhitelistApprover);
+        grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, to);
+        uncommonWhitelistApprover = to;
     }
 
     function safeTransferFrom(address, address, uint256,
@@ -352,11 +375,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
         revert("common transfer disabled");
     }
 
-    function setFinalizeTransferTimeout(uint256 newTimeout) external onlyOwner {
+    function setFinalizeTransferTimeout(uint256 newTimeout) external onlyRole(DEFAULT_ADMIN_ROLE) {
         finalizeTransferTimeout = newTimeout;
     }
 
-    function setSalesStartTimestamp(uint256 newTimestamp) external onlyOwner {
+    function setSalesStartTimestamp(uint256 newTimestamp) external onlyRole(DEFAULT_ADMIN_ROLE) {
         salesStartTimestamp = newTimestamp;
     }
 

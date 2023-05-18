@@ -31,6 +31,8 @@ describe("Success transfer", async () => {
       "CN",
       "",
       accounts[1].getAddress(),
+      accounts[3].getAddress(),
+      accounts[4].getAddress(),
       "0x",
       fraudDecider.address,
       true,
@@ -95,6 +97,7 @@ describe("Success transfer", async () => {
 
   it("ownership should should change after transfer", async () => {
     const tokenOwner = await collectionInstance.ownerOf(BN.from(0));
+    console.log(tokenOwner);
     expect(tokenOwner).eq(await accounts[2].getAddress())
   });
 });
@@ -116,6 +119,8 @@ describe("Transfer with fraud", async () => {
       "CN",
       "",
       accounts[1].getAddress(),
+      accounts[3].getAddress(),
+      accounts[4].getAddress(),
       "0x",
       fraudDecider.address,
       true,
