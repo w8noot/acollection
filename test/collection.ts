@@ -2,12 +2,10 @@ import {expect} from "chai";
 import {ethers} from "hardhat";
 import {BigNumber as BN, Signer} from "ethers";
 import {
+  ACollection,
+  ACollection__factory,
   FraudDeciderWeb2,
   FraudDeciderWeb2__factory,
-  Mark3dAccessToken,
-  Mark3dAccessToken__factory,
-  Mark3dCollection,
-  Mark3dCollection__factory
 } from "../typechain-types";
 import "@nomicfoundation/hardhat-chai-matchers";
 
@@ -18,37 +16,25 @@ const genRanHex = (size: number) =>
 
 describe("Success transfer", async () => {
   let accounts: Signer[];
-  let accessToken: Mark3dAccessToken;
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: Mark3dCollection;
+  let collectionInstance: ACollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
-    const accessTokenFactory = new Mark3dAccessToken__factory(accounts[0]);
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new Mark3dCollection__factory(accounts[0]);
+    const collectionFactory = new ACollection__factory(accounts[0]);
 
-    const collectionToClone = await collectionFactory.deploy();
     fraudDecider = await fraudDeciderFactory.deploy();
-
-    const encoder = new TextEncoder();
-    const globalSalt = ethers.utils.hexlify(encoder.encode("Global Salt"));
-
-    accessToken = await accessTokenFactory.deploy(
-      "Mark3D Access Token",
-      "MARK3D",
+    collectionInstance = await collectionFactory.deploy(
+      "Collection name",
+      "CN",
       "",
-      globalSalt,
-      collectionToClone.address,
+      accounts[1].getAddress(),
+      "0x",
+      fraudDecider.address,
       true,
-      fraudDecider.address
     );
-    const salt = genRanHex(64);
-    await accessToken.connect(accounts[1]).createCollection("0x" + salt,
-      "TEST", "TEST", "", "", "0x");
-    const collectionAddress = await accessToken.predictDeterministicAddress("0x" + salt);
-    collectionInstance = collectionFactory.attach(collectionAddress);
   });
 
   it("mint", async () => {
@@ -57,8 +43,8 @@ describe("Success transfer", async () => {
 
   it("init transfer", async () => {
     const tokenId = BN.from(0);
-    let transfernNumber = await collectionInstance.transferCounts(tokenId);
-    transfernNumber = transfernNumber.add(1); // count increments in initTransfer and before emitting
+    let transferNumber = await collectionInstance.transferCounts(tokenId);
+    transferNumber = transferNumber.add(1); // count increments in initTransfer and before emitting
 
     const tx = await collectionInstance
       .connect(accounts[1])
@@ -71,7 +57,7 @@ describe("Success transfer", async () => {
     await expect(tx)
       .to
       .emit(collectionInstance, "TransferInit")
-      .withArgs(BN.from(0), await accounts[1].getAddress(), await accounts[2].getAddress(), transfernNumber);
+      .withArgs(tokenId, await accounts[1].getAddress(), await accounts[2].getAddress(), transferNumber);
   });
 
   it("set public key", async () => {
@@ -82,7 +68,7 @@ describe("Success transfer", async () => {
     await expect(tx)
       .to
       .emit(collectionInstance, "TransferPublicKeySet")
-      .withArgs(BN.from(0), "0x12");
+      .withArgs(tokenId, "0x12");
   });
 
   it("set encrypted password", async () => {
@@ -107,67 +93,33 @@ describe("Success transfer", async () => {
       .withArgs(await accounts[1].getAddress(), await accounts[2].getAddress(), BN.from(0));
   });
 
-  it("self collections should be not empty after transfer", async () => {
-    const collections = await accessToken
-      .connect(accounts[2])
-      .getSelfCollections(BN.from(0), BN.from(10));
-    expect(collections).deep.eq([
-      [[BN.from(0), collectionInstance.address, "0x"]],
-      [BN.from(1)],
-      1,
-    ]);
-  });
-
-  it("self tokens should be correct after transfer", async () => {
-    const tokens = await accessToken
-      .connect(accounts[2])
-      .getSelfTokens([BN.from(0)], [BN.from(0)], [BN.from(10)]);
-    expect(tokens).deep.eq([
-      [
-        [
-          [BN.from(0), "a", "0x"],
-        ],
-      ],
-      [
-        1
-      ]
-    ]);
+  it("ownership should should change after transfer", async () => {
+    const tokenOwner = await collectionInstance.ownerOf(BN.from(0));
+    expect(tokenOwner).eq(await accounts[2].getAddress())
   });
 });
 
 describe("Transfer with fraud", async () => {
   let accounts: Signer[];
-  let accessToken: Mark3dAccessToken;
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: Mark3dCollection;
+  let collectionInstance: ACollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
-    const accessTokenFactory = new Mark3dAccessToken__factory(accounts[0]);
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new Mark3dCollection__factory(accounts[0]);
-
-    const collectionToClone = await collectionFactory.deploy();
-    fraudDecider = await fraudDeciderFactory.deploy();
+    const collectionFactory = new ACollection__factory(accounts[0]);
     
-    const encoder = new TextEncoder();
-    const globalSalt = ethers.utils.hexlify(encoder.encode("Global Salt"));
-
-    accessToken = await accessTokenFactory.deploy(
-      "Mark3D Access Token",
-      "MARK3D",
+    fraudDecider = await fraudDeciderFactory.deploy();
+    collectionInstance = await collectionFactory.deploy(
+      "Collection name",
+      "CN",
       "",
-      globalSalt,
-      collectionToClone.address,
+      accounts[1].getAddress(),
+      "0x",
+      fraudDecider.address,
       true,
-      fraudDecider.address
     );
-    const salt = genRanHex(64);
-    await accessToken.connect(accounts[1]).createCollection("0x" + salt,
-      "TEST", "TEST", "", "", "0x");
-    const collectionAddress = await accessToken.predictDeterministicAddress("0x" + salt);
-    collectionInstance = collectionFactory.attach(collectionAddress);
   });
 
   it("mint", async () => {
@@ -176,8 +128,8 @@ describe("Transfer with fraud", async () => {
 
   it("init transfer", async () => {
     const tokenId = BN.from(0);
-    let transfernNumber = await collectionInstance.transferCounts(tokenId);
-    transfernNumber = transfernNumber.add(1); // count increments in initTransfer and before emitting
+    let transferNumber = await collectionInstance.transferCounts(tokenId);
+    transferNumber = transferNumber.add(1); // count increments in initTransfer and before emitting
 
     const tx = await collectionInstance.connect(accounts[1])
       .initTransfer(BN.from(0),
@@ -185,7 +137,7 @@ describe("Transfer with fraud", async () => {
     await expect(tx)
       .to
       .emit(collectionInstance, "TransferInit")
-      .withArgs(BN.from(0), await accounts[1].getAddress(), await accounts[2].getAddress(), transfernNumber);
+      .withArgs(BN.from(0), await accounts[1].getAddress(), await accounts[2].getAddress(), transferNumber);
   });
 
   it("set public key", async () => {

@@ -30,7 +30,7 @@ contract FraudDeciderWeb2 is IFraudDecider, AccessControl {
         bytes calldata privateKey,
         bytes calldata encryptedPassword
     ) external returns (bool, bool) {
-        reports[_msgSender()][tokenId] = Report(Mark3dCollection(_msgSender()), tokenId, cid, publicKey, privateKey, encryptedPassword);
+        reports[_msgSender()][tokenId] = Report(ACollection(_msgSender()), tokenId, cid, publicKey, privateKey, encryptedPassword);
         emit FraudReported(_msgSender(), tokenId, cid, publicKey, privateKey, encryptedPassword);
         return (false, false);
     }

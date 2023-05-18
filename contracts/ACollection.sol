@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "./Mark3dAccessToken.sol";
 import "./IFraudDecider.sol";
 import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
 
-contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradeable, OwnableUpgradeable {
+contract ACollection is IEncryptedFileToken, ERC721Enumerable, Ownable {
     /// @dev TokenData - struct with basic token data
     struct TokenData {
         uint256 id;             // token id
@@ -33,8 +32,6 @@ contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradea
         uint256 passwordSetAt;                                  // password set at
     }
 
-    uint256 public accessTokenId;                              // access token id
-    Mark3dAccessToken public accessToken;                      // Access token contract address
     bytes public collectionData;                               // collection additional data
     string private contractMetaUri;                            // contract-level metadata
     mapping(uint256 => string) public tokenUris;               // mapping of token metadata uri
@@ -48,39 +45,17 @@ contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradea
     uint256 public finalizeTransferTimeout;                    // Time before transfer finalizes automatically 
     uint256 private salesStartTimestamp;                       // Time when users can start transfer tokens 
 
-    /// @dev modifier for checking if call is from the access token contract
-    modifier onlyAccessToken() {
-        require(_msgSender() == address(accessToken), "Mark3dCollection: allowed to call only from access token");
-        _;
-    }
-
-    /// @dev initialize function
-    /// @param name - name of the token
-    /// @param symbol - symbol of the token
-    /// @param _contractMetaUri - contract-level metadata uri
-    /// @param _accessToken - access token contract address
-    /// @param _accessTokenId - access token id
-    /// @param _owner - collection creator
-    /// @param _data - additional collection data
-    /// @param _fraudDecider - fraud decider instance
-    /// @param _fraudLateDecisionEnabled - if fraud decision is not instant
-    function initialize(
+    constructor(
         string memory name,
         string memory symbol,
         string memory _contractMetaUri,
-        Mark3dAccessToken _accessToken,
-        uint256 _accessTokenId,
         address _owner,
         bytes memory _data,
         IFraudDecider _fraudDecider,
         bool _fraudLateDecisionEnabled
-    ) external initializer {
-        __ERC721_init(name, symbol);
-
+    ) ERC721(name, symbol) {
         tokensCount = 0;
         contractMetaUri = _contractMetaUri;
-        accessTokenId = _accessTokenId;
-        accessToken = _accessToken;
         collectionData = _data;
         tokensLimit = 10000;
         fraudDecider_ = _fraudDecider;
@@ -93,11 +68,9 @@ contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradea
     /**
      * @dev See {IERC165-supportsInterface}.
      */
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721EnumerableUpgradeable, IERC165Upgradeable) returns (bool) {
-        return
-        interfaceId == type(IEncryptedFileTokenUpgradeable).interfaceId ||
-        interfaceId == type(IEncryptedFileToken).interfaceId ||
-        super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721Enumerable, IERC165) returns (bool) {
+        return interfaceId == type(IEncryptedFileToken).interfaceId ||
+            super.supportsInterface(interfaceId);
     }
 
     /// @dev Returns the Uniform Resource Identifier (URI) for `tokenId` token.
@@ -358,23 +331,24 @@ contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradea
         emit TransferCancellation(tokenId);
     }
 
+    // TODO: change modifyer
     /// @dev function for transferring minting rights for collection
-    function transferOwnership(address to) public virtual override onlyAccessToken {
+    function transferOwnership(address to) public virtual override onlyOwner {
         _transferOwnership(to);
     }
 
     function safeTransferFrom(address, address, uint256,
-        bytes memory) public virtual override(ERC721Upgradeable, IERC721Upgradeable, IEncryptedFileTokenUpgradeable) {
+        bytes memory) public virtual override(ERC721, IERC721, IEncryptedFileToken) {
         revert("common transfer disabled");
     }
 
     function safeTransferFrom(address, address,
-        uint256) public virtual override(ERC721Upgradeable, IERC721Upgradeable, IEncryptedFileTokenUpgradeable) {
+        uint256) public virtual override(ERC721, IERC721, IEncryptedFileToken) {
         revert("common transfer disabled");
     }
 
     function transferFrom(address, address,
-        uint256) public virtual override(ERC721Upgradeable, IERC721Upgradeable, IEncryptedFileTokenUpgradeable) {
+        uint256) public virtual override(ERC721, IERC721, IEncryptedFileToken) {
         revert("common transfer disabled");
     }
 
@@ -397,14 +371,5 @@ contract ACollection is IEncryptedFileTokenUpgradeable, ERC721EnumerableUpgradea
         _safeMint(to, id);
         tokenUris[id] = metaUri;
         tokenData[id] = data;
-    }
-
-    function _afterTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId
-    ) internal virtual override {
-        super._afterTokenTransfer(from, to, tokenId);
-        accessToken.updateCollectionIndex(from, to, accessTokenId);
     }
 }
