@@ -43,6 +43,12 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     mapping(uint256 => bytes) public tokenData;                // mapping of token additional data
     uint256 public tokensCount;                                // count of minted tokens
     uint256 public tokensLimit;                                // mint limit
+    uint256 public commonTokensCount;                          // count of free minted common tokens
+    uint256 public commonTokensLimit;                          // free mint common tokens limit
+    uint256 public uncommonTokensCount;                        // count of free minted uncommon tokens
+    uint256 public uncommonTokensLimit;                        // free mint uncommon tokens limit
+    uint256 public payedTokensCount;                           // count of minted tokens
+    uint256 public payedTokensLimit;                           // mint limit
     mapping(uint256 => TransferInfo) private transfers;        // transfer details
     mapping(uint256 => uint256) public transferCounts;         // count of transfers per transfer
     bool private fraudLateDecisionEnabled;                     // false if fraud decision is instant
@@ -62,13 +68,21 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         bool _fraudLateDecisionEnabled
     ) ERC721(name, symbol) {
         tokensCount = 0;
+        tokensLimit = 10000;
+        commonTokensCount = 0;                         
+        commonTokensLimit = 6000;                     
+        uncommonTokensCount = 0;                       
+        uncommonTokensLimit = 1000;                   
+        payedTokensCount = 0;                          
+        payedTokensLimit = 3000;
+
         contractMetaUri = _contractMetaUri;
         collectionData = _data;
-        tokensLimit = 10000;
         fraudDecider_ = _fraudDecider;
         fraudLateDecisionEnabled = _fraudLateDecisionEnabled;
         finalizeTransferTimeout = 24 hours;
         salesStartTimestamp = block.timestamp - 1 minutes;
+
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(COMMON_WHITELIST_APPROVER_ROLE, _commonWhitelistApprover);
         commonWhitelistApprover = _commonWhitelistApprover;
@@ -137,14 +151,35 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     /// @dev Attaches metaUri to tokens if was not specified earlier
     /// @param startId - tokenId of the first token to mint
     /// @param count - tokens quantity to mint
-    /// @param metaUris - metadata uri list
-    function attachMetaBatch(uint256 startId, uint256 count, string[] memory metaUris) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    /// @param commonMetaUris - metadata uri list for common free mint
+    /// @param uncommonMetaUris - metadata uri list for uncommon free mint
+    /// @param payedMetaUris - metadata uri list
+    function attachMetaBatch(
+        uint256 startId, 
+        uint256 count, 
+        string[] memory commonMetaUris, 
+        string[] memory uncommonMetaUris, 
+        string[] memory payedMetaUris
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
-        require(count == metaUris.length, "Mark3dCollection: metaUris list length must be equal to count");
+        require(count == commonMetaUris.length + uncommonMetaUris.length + payedMetaUris.length, "Mark3dCollection: metaUris lists sum length must be equal to count");
+        
         uint256 id = startId;
+        uint256 commonCounter = 0;
+        uint256 uncommonCounter = 0;
+        uint256 payedCounter = 0;
         for (uint256 i = 0; i < count; i++) {
             require(bytes(tokenUris[id]).length == 0, "Mark3dCollection: token's metaUri is not empty");
-            tokenUris[id] = metaUris[i];
+            if (id < commonTokensLimit) {
+                tokenUris[id] = commonMetaUris[commonCounter];
+                commonCounter++;
+            } else if (id < commonTokensLimit + uncommonTokensLimit) {
+                tokenUris[id] = uncommonMetaUris[uncommonCounter];
+                uncommonCounter++;
+            } else {
+                tokenUris[id] = payedMetaUris[payedCounter];
+                payedCounter++;
+            }
             id++;
         }
     }
@@ -388,7 +423,16 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     /// @param metaUri - metadata uri
     /// @param data - additional token data
     function _mint(address to, uint256 id, string memory metaUri, bytes memory data) internal {
-        require(id == tokensCount, "Mark3dCollection: wrong id");
+        if (id < commonTokensLimit) {
+            require(commonTokensCount + 1 < commonTokensLimit, "Mark3dCollection: wrong id");
+            commonTokensCount++;
+        } else if (id < commonTokensLimit + uncommonTokensLimit) {
+            require(uncommonTokensCount + 1 < uncommonTokensLimit, "Mark3dCollection: wrong id");
+            uncommonTokensCount++;
+        } else {
+            require(payedTokensCount + 1 < payedTokensLimit, "Mark3dCollection: wrong id");
+            payedTokensCount++;
+        }
         tokensCount++;
         _safeMint(to, id);
         tokenUris[id] = metaUri;

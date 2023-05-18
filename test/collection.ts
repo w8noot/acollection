@@ -99,6 +99,44 @@ describe("Success transfer", async () => {
     const tokenOwner = await collectionInstance.ownerOf(BN.from(0));
     expect(tokenOwner).eq(await accounts[2].getAddress())
   });
+
+  it("mint batch", async () => {
+    await collectionInstance.connect(accounts[1]).mintBatchWithoutMeta(
+      accounts[0].getAddress(),
+      BN.from(5990),
+      BN.from(20),
+      Array(20).fill("0x"),
+    )
+
+
+    const common = await collectionInstance.commonTokensCount();
+    const uncommon = await collectionInstance.uncommonTokensCount();
+    const payed = await collectionInstance.payedTokensCount();
+
+    expect(common.eq(BN.from(10 + 1))).true; // +1 because we've minted common earlier
+    expect(uncommon.eq(BN.from(10))).true;
+    expect(payed.eq(BN.from(0))).true;
+  })
+
+  it("attach meta", async () => {
+    const commonArr = Array(10).fill(0).map((_, i) => `${i}c`) ;
+    const uncommonArr = Array(10).fill(0).map((_, i) => `${i}u`);
+
+    await collectionInstance.connect(accounts[1]).attachMetaBatch(
+      BN.from(5990),
+      BN.from(20),
+      commonArr,
+      uncommonArr,
+      Array(0),
+    );
+
+    const resArr = [];
+    for(let i = BN.from(5990); i.lt(6010); i = i.add(BN.from(1))) {
+      resArr.push(await collectionInstance.tokenUris(i));
+    }
+  
+    expect(commonArr.concat(uncommonArr)).deep.eq(resArr);
+  })
 });
 
 describe("Transfer with fraud", async () => {
