@@ -9,9 +9,8 @@ import "./IFraudDecider.sol";
 import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
-import "./Whitelist.sol";
 
-contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, AccessControl {
+contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     using ECDSA for bytes32;
     
     /// @dev TokenData - struct with basic token data
@@ -65,8 +64,6 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
     IFraudDecider private fraudDecider_;                       // fraud decider
     uint256 public finalizeTransferTimeout;                    // Time before transfer finalizes automatically 
     uint256 private salesStartTimestamp;                       // Time when users can start transfer tokens 
-    uint256 public whitelistDeadline;
-    uint256 public whitelistDiscount;                         // 1 - 0.01%
     uint256 private nonce = 0;
 
     constructor(
@@ -117,14 +114,6 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
                 payedCids[i - commonTokensLimit+uncommonTokensLimit] = cids[i];
             }
         }
-    }
-
-    function setWhitelistParams(
-        uint256 deadline,
-        uint256 discount
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        whitelistDeadline = deadline;
-        whitelistDiscount = discount;
     }
 
     /**
@@ -276,35 +265,23 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         bytes calldata publicKey,
         bytes calldata data
     ) external {
-        if (data.length == 0) {
-            // called by `fulfillOrder`
-            require(whitelistDeadline == 0 || whitelistDeadline < block.timestamp, "Mark3dCollection: whitelist period");
-        } else {
-            // called by `fulfillOrderWhitelisted` 
-            Whitelist.Info memory whitelistInfo = Whitelist.decode(data);
-            require(whitelistDeadline != 0, "Mark3dCollection: collection doesn't have whitelist");
-            require(whitelistDeadline > block.timestamp, "Mark3dCollection: whitelist deadline exceeds");
-            uint256 finalPrice = whitelistInfo.price;
+        require(publicKey.length > 0, "Mark3dCollection: empty public key");
+        TransferInfo storage info = transfers[tokenId];
+        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
+        require(_msgSender() == info.initiator, "Mark3dCollection: permission denied");
+        require(info.to == address(0), "Mark3dCollection: draft already complete");
 
+        if (data.length != 0) {
             // if tokenId is within free mint range and it's initial purchase
             if ((tokenId < commonTokensLimit + uncommonTokensLimit) && bytes(tokenUris[tokenId]).length == 0) {
                 address signer = uncommonWhitelistApprover;
                 if (tokenId < commonTokensLimit) {
                     signer = commonWhitelistApprover;
                 }
-                require(whitelistInfo.address_bytes.toEthSignedMessageHash().recover(whitelistInfo.signature) == signer, "Mark3dCollection: whitelist invalid signature");
-
-                uint256 discount = (whitelistInfo.price*whitelistDiscount)/PERCENT_MULTIPLIER;
-                finalPrice = whitelistInfo.price - discount;
+                bytes32 address_bytes = bytes32(uint256(uint160(to)));
+                require(address_bytes.toEthSignedMessageHash().recover(data) == signer, "Mark3dCollection: whitelist invalid signature");
             }
-            require(whitelistInfo.msgValue == finalPrice, "Mark3dCollection: value must equal price with discount");
         }
-
-        require(publicKey.length > 0, "Mark3dCollection: empty public key");
-        TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(_msgSender() == info.initiator, "Mark3dCollection: permission denied");
-        require(info.to == address(0), "Mark3dCollection: draft already complete");
         
         info.to = to;
         info.data = data;
@@ -358,15 +335,14 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         require(info.to == _msgSender() ||
             (info.passwordSetAt + 24 hours < block.timestamp && info.from == _msgSender()), "Mark3dCollection: permission denied");
 
+        // if initial purchase
         if (bytes(tokenUris[tokenId]).length == 0) {
             string[] storage cidArray;
-            bytes32 address_bytes = bytes32("bCBvIGIgYSBuIG8gdg==");
             bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
+            bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
 
             if (info.data.length != 0) {
-                Whitelist.Info memory whitelistInfo = Whitelist.decode(info.data);
-                address_bytes = whitelistInfo.address_bytes;
-                signature = whitelistInfo.signature;
+                signature = info.data;
             }
             if (tokenId < commonTokensLimit) {
                 cidArray = commonCids;
@@ -375,7 +351,14 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
             } else {
                 cidArray = payedCids;
             }
-            uint256 cidId = prng(cidArray.length, info.blockTimestamp, info.blockHash, address_bytes, signature, nonce);
+            uint256 cidId = prng(cidArray.length, 
+                                    info.blockTimestamp, 
+                                    info.blockHash, 
+                                    blockhash(block.number - 1), 
+                                    address_bytes, 
+                                    signature, 
+                                    nonce
+            );
             nonce++;
 
             tokenUris[tokenId] = cidArray[cidId];
@@ -415,16 +398,14 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
                 info.callbackReceiver.transferFraudDetected(tokenId, approve);
             }
             if (approve) {
-                // metadata random for initial purchase
+                // if initial purchase
                 if (bytes(tokenUris[tokenId]).length == 0) {
                     string[] storage cidArray;
-                    bytes32 address_bytes = bytes32("bCBvIGIgYSBuIG8gdg==");
                     bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
+                    bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
 
                     if (info.data.length != 0) {
-                        Whitelist.Info memory whitelistInfo = Whitelist.decode(info.data);
-                        address_bytes = whitelistInfo.address_bytes;
-                        signature = whitelistInfo.signature;
+                        signature = info.data;
                     }
                     if (tokenId < commonTokensLimit) {
                         cidArray = commonCids;
@@ -433,7 +414,14 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
                     } else {
                         cidArray = payedCids;
                     }
-                    uint256 cidId = prng(cidArray.length, info.blockTimestamp, info.blockHash, address_bytes, signature, nonce);
+                    uint256 cidId = prng(cidArray.length, 
+                                            info.blockTimestamp, 
+                                            info.blockHash, 
+                                            blockhash(block.number - 1), 
+                                            address_bytes, 
+                                            signature, 
+                                            nonce
+                    );
                     nonce++;
 
                     tokenUris[tokenId] = cidArray[cidId];
@@ -466,31 +454,36 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         address to = info.to;
         delete transfers[tokenId];
         if (!approve) {
-                // metadata random for initial purchase
-                if (bytes(tokenUris[tokenId]).length == 0) {
-                    string[] storage cidArray;
-                    bytes32 address_bytes = bytes32("bCBvIGIgYSBuIG8gdg==");
-                    bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
+            // if initial purchase
+            if (bytes(tokenUris[tokenId]).length == 0) {
+                string[] storage cidArray;
+                bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
+                bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
 
-                    if (info.data.length != 0) {
-                        Whitelist.Info memory whitelistInfo = Whitelist.decode(info.data);
-                        address_bytes = whitelistInfo.address_bytes;
-                        signature = whitelistInfo.signature;
-                    }
-                    if (tokenId < commonTokensLimit) {
-                        cidArray = commonCids;
-                    } else if (tokenId < commonTokensLimit + uncommonTokensLimit) {
-                        cidArray = uncommonCids;
-                    } else {
-                        cidArray = payedCids;
-                    }
-                    uint256 cidId = prng(cidArray.length, info.blockTimestamp, info.blockHash, address_bytes, signature, nonce);
-                    nonce++;
-
-                    tokenUris[tokenId] = cidArray[cidId];
-                    cidArray[cidId] = cidArray[cidArray.length-1];
-                    cidArray.pop();
+                if (info.data.length != 0) {
+                    signature = info.data;
                 }
+                if (tokenId < commonTokensLimit) {
+                    cidArray = commonCids;
+                } else if (tokenId < commonTokensLimit + uncommonTokensLimit) {
+                    cidArray = uncommonCids;
+                } else {
+                    cidArray = payedCids;
+                }
+                uint256 cidId = prng(cidArray.length, 
+                                        info.blockTimestamp, 
+                                        info.blockHash, 
+                                        blockhash(block.number - 1), 
+                                        address_bytes, 
+                                        signature, 
+                                        nonce
+                );
+                nonce++;
+
+                tokenUris[tokenId] = cidArray[cidId];
+                cidArray[cidId] = cidArray[cidArray.length-1];
+                cidArray.pop();
+            }
             _safeTransfer(ownerOf(tokenId), to, tokenId, data);
         }
 
@@ -579,9 +572,9 @@ contract ACollection is Whitelist, IEncryptedFileToken, ERC721Enumerable, Access
         tokenData[id] = data;
     }
     
-    function prng(uint256 mod, uint256 blockTimestamp, bytes32 blockHash, bytes32 address_bytes, bytes memory signature, uint256 n) private view returns(uint256) {
+    function prng(uint256 mod, uint256 blockTimestamp, bytes32 blockHash, bytes32 blockHash2, bytes32 address_bytes, bytes memory signature, uint256 n) private view returns(uint256) {
         bytes32 hash = keccak256(abi.encodePacked(blockTimestamp, blockHash, address_bytes));
-        hash = keccak256(abi.encodePacked(signature, n, block.prevrandao, hash));
+        hash = keccak256(abi.encodePacked(blockHash2, signature, n, block.prevrandao, hash));
         return uint256(hash) % mod;
     }
 }

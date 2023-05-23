@@ -3,12 +3,14 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
-import "./Whitelist.sol";
 
-contract Mark3dExchange is Whitelist, IEncryptedFileTokenCallbackReceiver, Context, Ownable {
+contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable {
+    using ECDSA for bytes32;
+
     struct Order {
         IEncryptedFileToken token;
         uint256 tokenId;
@@ -23,8 +25,19 @@ contract Mark3dExchange is Whitelist, IEncryptedFileTokenCallbackReceiver, Conte
 
     uint256 public constant PERCENT_MULTIPLIER = 10000;
 
+    mapping(IEncryptedFileToken => uint256) public whitelistDeadlines;
+    mapping(IEncryptedFileToken => uint256) public whitelistDiscounts;  // 1 - 0.01%
+
     mapping(IEncryptedFileToken => mapping(uint256 => Order)) public orders;
 
+    function setWhitelistParams(
+        IEncryptedFileToken collection,
+        uint256 deadline,
+        uint256 discount
+    ) external onlyOwner {
+        whitelistDeadlines[collection] = deadline;
+        whitelistDiscounts[collection] = discount;
+    }
 
     function placeOrder(
         IEncryptedFileToken token,
@@ -55,32 +68,39 @@ contract Mark3dExchange is Whitelist, IEncryptedFileTokenCallbackReceiver, Conte
     function fulfillOrder(
         IEncryptedFileToken token,
         bytes calldata publicKey,
-        uint256 tokenId
+        uint256 tokenId,
+        bytes calldata data
     ) external payable {
         Order storage order = orders[token][tokenId];
         require(order.price != 0, "Mark3dExchange: order doesn't exist");
         require(!order.fulfilled, "Mark3dExchange: order was already fulfilled");
         require(msg.value == order.price, "Mark3dExchange: value must equal");
+        require(whitelistDeadlines[token] == 0 || whitelistDeadlines[token] < block.timestamp, "Mark3dExchange: whitelist period");
         order.receiver = payable(_msgSender());
         order.fulfilled = true;
-        order.token.completeTransferDraft(order.tokenId, order.receiver, publicKey, bytes(""));
+        order.token.completeTransferDraft(order.tokenId, order.receiver, publicKey, data);
     }
 
     function fulfillOrderWhitelisted(
         IEncryptedFileToken token,
         bytes calldata publicKey,
         uint256 tokenId,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata data
     ) external payable {
         Order storage order = orders[token][tokenId];
         require(order.price != 0, "Mark3dExchange: order doesn't exist");
         require(!order.fulfilled, "Mark3dExchange: order was already fulfilled");
+        require(whitelistDeadlines[token] != 0, "Mark3dExchange: collection doesn't have whitelist");
+        require(whitelistDeadlines[token] > block.timestamp, "Mark3dExchange: whitelist deadline exceeds");
         bytes32 address_bytes = bytes32(uint256(uint160(_msgSender())));
-        Whitelist.Info memory wInfo = Whitelist.Info(order.price, msg.value, address_bytes, signature);
-        bytes memory whitelistInfoEncoded = Whitelist.encode(wInfo);
+        require(address_bytes.toEthSignedMessageHash().recover(signature) == owner(), "Mark3dExchange: whitelist invalid signature");
+        uint256 discount = (order.price*whitelistDiscounts[token])/PERCENT_MULTIPLIER;
+        uint256 discount_price = order.price - discount;
+        require(msg.value == discount_price, "Mark3dExchange: value must equal price with discount");
         order.receiver = payable(_msgSender());
         order.fulfilled = true;
-        order.token.completeTransferDraft(order.tokenId, order.receiver, publicKey, whitelistInfoEncoded);
+        order.token.completeTransferDraft(order.tokenId, order.receiver, publicKey, data);
     }
 
     function cancelOrder(
