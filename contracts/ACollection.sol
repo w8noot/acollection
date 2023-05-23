@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import "./IFraudDecider.sol";
@@ -10,7 +11,7 @@ import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
 
-contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
+contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IERC2981 {
     using ECDSA for bytes32;
     
     /// @dev TokenData - struct with basic token data
@@ -26,7 +27,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         address initiator;                                      // transfer initiator
         address from;                                           // transfer sender
         address to;                                             // transfer target
-        IEncryptedFileTokenCallbackReceiver callbackReceiver;  // callback receiver
+        IEncryptedFileTokenCallbackReceiver callbackReceiver;   // callback receiver
         bytes data;                                             // transfer data
         bytes publicKey;                                        // public key of receiver
         bytes encryptedPassword;                                // encrypted password
@@ -40,24 +41,27 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     uint256 public constant PERCENT_MULTIPLIER = 10000;
     bytes32 public constant COMMON_WHITELIST_APPROVER_ROLE = keccak256("COMMON_WHITELIST_APPROVER");
     bytes32 public constant UNCOMMON_WHITELIST_APPROVER_ROLE = keccak256("UNCOMMON_WHITELIST_APPROVER");
+    uint256 public constant tokensLimit         = 10000;        // mint limit
+    uint256 public constant commonTokensLimit   = 6000;         // free mint common tokens limit
+    uint256 public constant uncommonTokensLimit = 1000;         // free mint uncommon tokens limit
+    uint256 public constant payedTokensLimit    = 3000;         // payed mint limit
     address public commonWhitelistApprover;
     address public uncommonWhitelistApprover;
     string[] public commonCids;
     string[] public uncommonCids;
     string[] public payedCids;
 
+    mapping(uint256 => uint256) private royalties;             // mapping of token to royalty
+    address public royaltyReceiver;
+
     bytes public collectionData;                               // collection additional data
     string private contractMetaUri;                            // contract-level metadata
     mapping(uint256 => string) public tokenUris;               // mapping of token metadata uri
     mapping(uint256 => bytes) public tokenData;                // mapping of token additional data
     uint256 public tokensCount;                                // count of minted tokens
-    uint256 public tokensLimit;                                // mint limit
     uint256 public commonTokensCount;                          // count of free minted common tokens
-    uint256 public commonTokensLimit;                          // free mint common tokens limit
     uint256 public uncommonTokensCount;                        // count of free minted uncommon tokens
-    uint256 public uncommonTokensLimit;                        // free mint uncommon tokens limit
     uint256 public payedTokensCount;                           // count of minted tokens
-    uint256 public payedTokensLimit;                           // mint limit
     mapping(uint256 => TransferInfo) private transfers;        // transfer details
     mapping(uint256 => uint256) public transferCounts;         // count of transfers per transfer
     bool private fraudLateDecisionEnabled;                     // false if fraud decision is instant
@@ -73,19 +77,17 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         address _admin,
         address _commonWhitelistApprover,
         address _uncommonWhitelistApprover,
+        address _royaltyReciever,
         bytes memory _data,
         IFraudDecider _fraudDecider,
-        bool _fraudLateDecisionEnabled,
-        string[] memory cids
+        bool _fraudLateDecisionEnabled
     ) ERC721(name, symbol) {
         tokensCount = 0;
-        tokensLimit = 10000;
         commonTokensCount = 0;                         
-        commonTokensLimit = 6000;                     
         uncommonTokensCount = 0;                       
-        uncommonTokensLimit = 1000;                   
         payedTokensCount = 0;                          
-        payedTokensLimit = 3000;
+
+        royaltyReceiver = _royaltyReciever;
 
         contractMetaUri = _contractMetaUri;
         collectionData = _data;
@@ -100,20 +102,9 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         _grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, _uncommonWhitelistApprover);
         uncommonWhitelistApprover = _uncommonWhitelistApprover;
 
-        require(cids.length == 10000, "Mark3dCollection: wrong amount of cids");
         commonCids = new string[](commonTokensLimit);
         uncommonCids = new string[](uncommonTokensLimit);
         payedCids = new string[](payedTokensLimit);
-
-        for (uint i = 0; i < cids.length; i++) {
-            if (i < commonTokensLimit) {
-                commonCids[i] = cids[i];
-            } else if (i < commonTokensLimit+uncommonTokensLimit) {
-                uncommonCids[i - commonTokensLimit] = cids[i];
-            } else {
-                payedCids[i - commonTokensLimit+uncommonTokensLimit] = cids[i];
-            }
-        }
     }
 
     /**
@@ -151,11 +142,13 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         address to,
         uint256 id,
         string memory metaUri,
+        uint256 royalty,
         bytes memory _data
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
         require(id < tokensLimit, "Mark3dCollection: limit reached");
-        _mint(to, id, metaUri, _data);
+        require(royalty <= PERCENT_MULTIPLIER / 2, "Mark3dCollection: royalty is too high");
+        _mint(to, id, metaUri, royalty, _data);
     }
     
     /// @dev Mint batch of tokens without metaUri. Can called only by the owner
@@ -163,49 +156,14 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     /// @param startId - tokenId of the first token to mint
     /// @param count - tokens quantity to mint
     /// @param _data - additional token data list
-    function mintBatchWithoutMeta(address to, uint256 startId, uint256 count, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function mintBatchWithoutMeta(address to, uint256 startId, uint256 count, uint256 royalty, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
         require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
+        require(royalty <= PERCENT_MULTIPLIER / 2, "Mark3dCollection: royalty is too high");
         uint256 id = startId;
         for (uint256 i = 0; i < count; i++) {
             require(!_exists(id), "Mark3dCollection: token is already minted");
-            _mint(to, id, "", _data[i]);
-            id++;
-        }
-    }
-    
-    /// @dev Attaches metaUri to tokens if was not specified earlier
-    /// @param startId - tokenId of the first token to mint
-    /// @param count - tokens quantity to mint
-    /// @param commonMetaUris - metadata uri list for common free mint
-    /// @param uncommonMetaUris - metadata uri list for uncommon free mint
-    /// @param payedMetaUris - metadata uri list
-    function attachMetaBatch(
-        uint256 startId, 
-        uint256 count, 
-        string[] memory commonMetaUris, 
-        string[] memory uncommonMetaUris, 
-        string[] memory payedMetaUris
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
-        require(count == commonMetaUris.length + uncommonMetaUris.length + payedMetaUris.length, "Mark3dCollection: metaUris lists sum length must be equal to count");
-        
-        uint256 id = startId;
-        uint256 commonCounter = 0;
-        uint256 uncommonCounter = 0;
-        uint256 payedCounter = 0;
-        for (uint256 i = 0; i < count; i++) {
-            require(bytes(tokenUris[id]).length == 0, "Mark3dCollection: token's metaUri is not empty");
-            if (id < commonTokensLimit) {
-                tokenUris[id] = commonMetaUris[commonCounter];
-                commonCounter++;
-            } else if (id < commonTokensLimit + uncommonTokensLimit) {
-                tokenUris[id] = uncommonMetaUris[uncommonCounter];
-                uncommonCounter++;
-            } else {
-                tokenUris[id] = payedMetaUris[payedCounter];
-                payedCounter++;
-            }
+            _mint(to, id, "", royalty, _data[i]);
             id++;
         }
     }
@@ -555,7 +513,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
     /// @param id - token id
     /// @param metaUri - metadata uri
     /// @param data - additional token data
-    function _mint(address to, uint256 id, string memory metaUri, bytes memory data) internal {
+    function _mint(address to, uint256 id, string memory metaUri, uint256 royalty, bytes memory data) internal {
         if (id < commonTokensLimit) {
             require(commonTokensCount + 1 < commonTokensLimit, "Mark3dCollection: wrong id");
             commonTokensCount++;
@@ -570,11 +528,40 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl {
         _safeMint(to, id);
         tokenUris[id] = metaUri;
         tokenData[id] = data;
+        royalties[id] = royalty;
     }
     
     function prng(uint256 mod, uint256 blockTimestamp, bytes32 blockHash, bytes32 blockHash2, bytes32 address_bytes, bytes memory signature, uint256 n) private view returns(uint256) {
         bytes32 hash = keccak256(abi.encodePacked(blockTimestamp, blockHash, address_bytes));
         hash = keccak256(abi.encodePacked(blockHash2, signature, n, block.prevrandao, hash));
         return uint256(hash) % mod;
+    }
+
+    function addCids(uint256 startId, uint256 count, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(cids.length == count, "Mark3dCollection: cids count missmatch");
+        require(startId + count <= tokensLimit, "Mark3dCollection: cids count exceeds tokensLimit");
+
+        for (uint i = 0; i < cids.length; i++) {
+            uint256 id = startId + i;
+            require(id < tokensLimit, "Mark3dCollection: limit reached");
+            if (id < commonTokensLimit) {
+                commonCids[id] = cids[i];
+            } else if (id < commonTokensLimit+uncommonTokensLimit) {
+                uncommonCids[id - commonTokensLimit] = cids[i];
+            } else {
+                payedCids[id - commonTokensLimit+uncommonTokensLimit] = cids[i];
+            }
+        }
+    }
+
+    function setRoyaltyReceiver(address newAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        royaltyReceiver = newAddress;
+    }
+    
+    function royaltyInfo(uint256 tokenId, uint256 salePrice) public view override returns (address receiver, uint256 royaltyAmount) {
+        require(tokenId < tokensCount, "ERC2981Royalties: Token does not exist");
+
+        royaltyAmount = (salePrice * royalties[tokenId]) / PERCENT_MULTIPLIER;
+        return (royaltyReceiver, royaltyAmount);
     }
 }
