@@ -38,18 +38,23 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         bytes32 blockHash;
     }
 
+    error StartIdExceedsCurrentLength();
+    error ExceedsLimitByRarity();
+
     uint256 public constant PERCENT_MULTIPLIER = 10000;
     bytes32 public constant COMMON_WHITELIST_APPROVER_ROLE = keccak256("COMMON_WHITELIST_APPROVER");
     bytes32 public constant UNCOMMON_WHITELIST_APPROVER_ROLE = keccak256("UNCOMMON_WHITELIST_APPROVER");
     uint256 public constant tokensLimit         = 10000;        // mint limit
+    uint256 public constant freeMintLimit = commonTokensLimit + uncommonTokensLimit;
     uint256 public constant commonTokensLimit   = 6000;         // free mint common tokens limit
     uint256 public constant uncommonTokensLimit = 1000;         // free mint uncommon tokens limit
     uint256 public constant payedTokensLimit    = 3000;         // payed mint limit
     address public commonWhitelistApprover;
     address public uncommonWhitelistApprover;
     string[] public commonCids;
-    string[] public uncommonCids;
+    string[] public uncommonCids; 
     string[] public payedCids;
+    uint256 constant royaltyCeiling = PERCENT_MULTIPLIER / 2;  // 50%
 
     mapping(uint256 => uint256) private royalties;             // mapping of token to royalty
     address public royaltyReceiver;
@@ -101,10 +106,6 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         commonWhitelistApprover = _commonWhitelistApprover;
         _grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, _uncommonWhitelistApprover);
         uncommonWhitelistApprover = _uncommonWhitelistApprover;
-
-        commonCids = new string[](commonTokensLimit);
-        uncommonCids = new string[](uncommonTokensLimit);
-        payedCids = new string[](payedTokensLimit);
     }
 
     /**
@@ -147,7 +148,6 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
         require(id < tokensLimit, "Mark3dCollection: limit reached");
-        require(royalty <= PERCENT_MULTIPLIER / 2, "Mark3dCollection: royalty is too high");
         _mint(to, id, metaUri, royalty, _data);
     }
     
@@ -159,7 +159,6 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     function mintBatchWithoutMeta(address to, uint256 startId, uint256 count, uint256 royalty, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(startId + count-1 < tokensLimit, "Mark3dCollection: number of tokens exceeds tokensLimit");
         require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
-        require(royalty <= PERCENT_MULTIPLIER / 2, "Mark3dCollection: royalty is too high");
         uint256 id = startId;
         for (uint256 i = 0; i < count; i++) {
             require(!_exists(id), "Mark3dCollection: token is already minted");
@@ -231,7 +230,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
 
         if (data.length != 0) {
             // if tokenId is within free mint range and it's initial purchase
-            if ((tokenId < commonTokensLimit + uncommonTokensLimit) && bytes(tokenUris[tokenId]).length == 0) {
+            if ((tokenId < freeMintLimit) && bytes(tokenUris[tokenId]).length == 0) {
                 address signer = uncommonWhitelistApprover;
                 if (tokenId < commonTokensLimit) {
                     signer = commonWhitelistApprover;
@@ -295,33 +294,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
 
         // if initial purchase
         if (bytes(tokenUris[tokenId]).length == 0) {
-            string[] storage cidArray;
-            bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
-            bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
-
-            if (info.data.length != 0) {
-                signature = info.data;
-            }
-            if (tokenId < commonTokensLimit) {
-                cidArray = commonCids;
-            } else if (tokenId < commonTokensLimit + uncommonTokensLimit) {
-                cidArray = uncommonCids;
-            } else {
-                cidArray = payedCids;
-            }
-            uint256 cidId = prng(cidArray.length, 
-                                    info.blockTimestamp, 
-                                    info.blockHash, 
-                                    blockhash(block.number - 1), 
-                                    address_bytes, 
-                                    signature, 
-                                    nonce
-            );
-            nonce++;
-
-            tokenUris[tokenId] = cidArray[cidId];
-            cidArray[cidId] = cidArray[cidArray.length-1];
-            cidArray.pop();
+            attachRandomCid(tokenId, info);
         }
         _safeTransfer(ownerOf(tokenId), info.to, tokenId, info.data);
         if (address(info.callbackReceiver) != address(0)) {
@@ -358,33 +331,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
             if (approve) {
                 // if initial purchase
                 if (bytes(tokenUris[tokenId]).length == 0) {
-                    string[] storage cidArray;
-                    bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
-                    bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
-
-                    if (info.data.length != 0) {
-                        signature = info.data;
-                    }
-                    if (tokenId < commonTokensLimit) {
-                        cidArray = commonCids;
-                    } else if (tokenId < commonTokensLimit + uncommonTokensLimit) {
-                        cidArray = uncommonCids;
-                    } else {
-                        cidArray = payedCids;
-                    }
-                    uint256 cidId = prng(cidArray.length, 
-                                            info.blockTimestamp, 
-                                            info.blockHash, 
-                                            blockhash(block.number - 1), 
-                                            address_bytes, 
-                                            signature, 
-                                            nonce
-                    );
-                    nonce++;
-
-                    tokenUris[tokenId] = cidArray[cidId];
-                    cidArray[cidId] = cidArray[cidArray.length-1];
-                    cidArray.pop();
+                    attachRandomCid(tokenId, info);
                 }
                 _safeTransfer(ownerOf(tokenId), info.to, tokenId, info.data);
             }
@@ -414,33 +361,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         if (!approve) {
             // if initial purchase
             if (bytes(tokenUris[tokenId]).length == 0) {
-                string[] storage cidArray;
-                bytes memory signature = bytes("0LvQvtCx0LDQvdC+0LI=");
-                bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
-
-                if (info.data.length != 0) {
-                    signature = info.data;
-                }
-                if (tokenId < commonTokensLimit) {
-                    cidArray = commonCids;
-                } else if (tokenId < commonTokensLimit + uncommonTokensLimit) {
-                    cidArray = uncommonCids;
-                } else {
-                    cidArray = payedCids;
-                }
-                uint256 cidId = prng(cidArray.length, 
-                                        info.blockTimestamp, 
-                                        info.blockHash, 
-                                        blockhash(block.number - 1), 
-                                        address_bytes, 
-                                        signature, 
-                                        nonce
-                );
-                nonce++;
-
-                tokenUris[tokenId] = cidArray[cidId];
-                cidArray[cidId] = cidArray[cidArray.length-1];
-                cidArray.pop();
+                attachRandomCid(tokenId, info);
             }
             _safeTransfer(ownerOf(tokenId), to, tokenId, data);
         }
@@ -514,10 +435,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     /// @param metaUri - metadata uri
     /// @param data - additional token data
     function _mint(address to, uint256 id, string memory metaUri, uint256 royalty, bytes memory data) internal {
+        require(royalty <= PERCENT_MULTIPLIER / 2, "Mark3dCollection: royalty is too high");
         if (id < commonTokensLimit) {
             require(commonTokensCount + 1 < commonTokensLimit, "Mark3dCollection: wrong id");
             commonTokensCount++;
-        } else if (id < commonTokensLimit + uncommonTokensLimit) {
+        } else if (id < freeMintLimit) {
             require(uncommonTokensCount + 1 < uncommonTokensLimit, "Mark3dCollection: wrong id");
             uncommonTokensCount++;
         } else {
@@ -531,26 +453,63 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         royalties[id] = royalty;
     }
     
-    function prng(uint256 mod, uint256 blockTimestamp, bytes32 blockHash, bytes32 blockHash2, bytes32 address_bytes, bytes memory signature, uint256 n) private view returns(uint256) {
+    function prng(uint256 mod, uint256 blockTimestamp, bytes32 blockHash, bytes32 blockHash2, bytes32 address_bytes, bytes32 signature, uint256 n) private view returns(uint256) {
         bytes32 hash = keccak256(abi.encodePacked(blockTimestamp, blockHash, address_bytes));
         hash = keccak256(abi.encodePacked(blockHash2, signature, n, block.prevrandao, hash));
         return uint256(hash) % mod;
     }
+    
+    // id range [0, 6000)
+    function addCommonCids(uint256 startTokenId, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 count = cids.length;
+        uint256 startId = startTokenId;
 
-    function addCids(uint256 startId, uint256 count, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(cids.length == count, "Mark3dCollection: cids count missmatch");
-        require(startId + count <= tokensLimit, "Mark3dCollection: cids count exceeds tokensLimit");
+        if (startId > commonCids.length) revert StartIdExceedsCurrentLength();
+        if (startId + count > commonTokensLimit) revert ExceedsLimitByRarity();
 
-        for (uint i = 0; i < cids.length; i++) {
-            uint256 id = startId + i;
-            require(id < tokensLimit, "Mark3dCollection: limit reached");
-            if (id < commonTokensLimit) {
-                commonCids[id] = cids[i];
-            } else if (id < commonTokensLimit+uncommonTokensLimit) {
-                uncommonCids[id - commonTokensLimit] = cids[i];
-            } else {
-                payedCids[id - commonTokensLimit+uncommonTokensLimit] = cids[i];
-            }
+        // extend array if necessary
+        for (uint i = commonCids.length; i < startId + count; i++) {
+            commonCids.push(""); 
+        }
+
+        for (uint i = 0; i < count; i++) {
+            commonCids[startId + i] = cids[i];
+        }
+    }
+
+    // id range [6000, 7000)
+    function addUncommonCids(uint256 startTokenId, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 count = cids.length;
+        uint256 startId = startTokenId - commonTokensLimit;
+
+        if (startId > uncommonCids.length) revert StartIdExceedsCurrentLength();
+        if (startId + count > uncommonTokensLimit) revert ExceedsLimitByRarity();
+
+        // extend array if necessary
+        for (uint i = uncommonCids.length; i < startId + count; i++) {
+            uncommonCids.push("");
+        }
+
+        for (uint i = 0; i < count; i++) {
+            uncommonCids[startId + i] = cids[i];
+        }
+    }
+
+    // id range [7000, 10000) 
+    function addPayedCids(uint256 startTokenId, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 count = cids.length;
+        uint256 startId = tokensLimit - startTokenId;
+
+        if (startId > payedCids.length) revert StartIdExceedsCurrentLength();
+        if (startId + count > payedTokensLimit) revert ExceedsLimitByRarity();
+
+        // extend array if necessary
+        for (uint i = payedCids.length; i < startId + count; i++) {
+            payedCids.push("");
+        }
+
+        for (uint i = 0; i < count; i++) {
+            payedCids[startId + i] = cids[i];
         }
     }
 
@@ -563,5 +522,32 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
 
         royaltyAmount = (salePrice * royalties[tokenId]) / PERCENT_MULTIPLIER;
         return (royaltyReceiver, royaltyAmount);
+    }
+    
+    function attachRandomCid(uint256 tokenId, TransferInfo memory info) internal {
+        string[] storage cidArray;
+        bytes32 signature = bytes32("0LvQvtCx0LDQvdC+0LI=");
+        bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
+
+        if (tokenId < commonTokensLimit) {
+            cidArray = commonCids;
+        } else if (tokenId < freeMintLimit) {
+            cidArray = uncommonCids;
+        } else {
+            cidArray = payedCids;
+        }
+        uint256 cidId = prng(cidArray.length, 
+                                info.blockTimestamp, 
+                                info.blockHash, 
+                                blockhash(block.number - 1), 
+                                address_bytes, 
+                                signature, 
+                                nonce
+        );
+        nonce++;
+
+        tokenUris[tokenId] = cidArray[cidId];
+        cidArray[cidId] = cidArray[cidArray.length-1];
+        cidArray.pop();
     }
 }

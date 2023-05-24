@@ -27,6 +27,7 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
     event FeeChanged(uint256 newFee);
 
     uint256 public constant PERCENT_MULTIPLIER = 10000;
+    uint256 public constant royaltyCeiling = PERCENT_MULTIPLIER;
     
     uint256 public fee;               // fee as percentage = PERCENT_MULTIPLIER / 100
     uint256 public accumulatedFees;
@@ -158,7 +159,7 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
         require(order.fulfilled, "Mark3dExchange: order wasn't fulfilled");
         
         uint256 receiverAmount = calculateFee(order.price, order.currency);
-        receiverAmount = payoffRoyalty(tokenId, order.price, order.currency, receiverAmount);
+        receiverAmount = payoffRoyalty(tokenId, receiverAmount, order.currency, receiverAmount);
         safeTransferCurrency(order.currency, order.initiator, receiverAmount);
         
         delete orders[IEncryptedFileToken(_msgSender())][tokenId];
@@ -172,7 +173,8 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
             safeTransferCurrency(order.currency, order.receiver, order.price);
         } else {
             uint256 receiverAmount = calculateFee(order.price, order.currency);
-            receiverAmount = payoffRoyalty(tokenId, order.price, order.currency, receiverAmount);
+            // calculate on [price - fee]
+            receiverAmount = payoffRoyalty(tokenId, receiverAmount, order.currency, receiverAmount);
             safeTransferCurrency(order.currency, order.initiator, receiverAmount);
         }
         delete orders[IEncryptedFileToken(_msgSender())][tokenId];
@@ -180,6 +182,7 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
     
     function payoffRoyalty(uint256 tokenId, uint256 price, IERC20 currency, uint256 finalAmount) internal returns (uint256) {
         try IERC2981(_msgSender()).royaltyInfo(tokenId, price) returns (address receiver, uint royaltyAmount) {
+            require(royaltyAmount < royaltyCeiling, "Mark3dExchange: royalty % is too high");
             if (receiver != address(0) && royaltyAmount > 0) {
                 finalAmount -= royaltyAmount;
                 safeTransferCurrency(currency, payable(receiver), royaltyAmount);
