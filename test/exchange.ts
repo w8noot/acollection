@@ -121,6 +121,14 @@ describe("Trade token", async () => {
     );
     await expect(tx).to.changeEtherBalance(accounts[5], BN.from(royalty));
   });
+
+  it("withdraw fee", async () => {
+    const tx = await exchangeInstance
+      .connect(accounts[0])
+      .withdrawFees(accounts[10].getAddress());
+
+    await expect(tx).to.changeEtherBalance(accounts[10], BN.from(1000));
+  });
 });
 
 describe("Trade token with whitelist", async () => {
