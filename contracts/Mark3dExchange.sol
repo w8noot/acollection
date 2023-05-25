@@ -43,7 +43,7 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
     }
 
     function setFee(uint256 _fee) external onlyOwner {
-        require(_fee <= PERCENT_MULTIPLIER / 2, "FilemarketExchangeV2: fee cannot be more than 50%");
+        require(_fee <= PERCENT_MULTIPLIER / 2, "Mark3dExchange: fee cannot be more than 50%");
         fee = _fee;
         emit FeeChanged(_fee);
     }
@@ -230,10 +230,10 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
             for (uint i = 0; i < tokensReceived.length; i++) {
                 IERC20 token = tokensReceived[i];
                 uint256 feeAmount = accumulatedFeesERC20[token];
-                require(feeAmount > 0, "Mark3dExchange: No fees to withdraw");
-                accumulatedFeesERC20[token] = 0;
-                token.safeTransfer(to, feeAmount);
-                
+                if (feeAmount > 0) {
+                  accumulatedFeesERC20[token] = 0;
+                  token.safeTransfer(to, feeAmount);
+                }
             }
         }
     }

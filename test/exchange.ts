@@ -28,7 +28,7 @@ describe("Trade token", async () => {
 
     fraudDecider = await fraudDeciderFactory.deploy();
     collectionInstance = await collectionFactory.deploy(
-      "Mark3D Access Token",
+      "Mark3D collection",
       "MARK3D",
       "",
       accounts[1].getAddress(),
