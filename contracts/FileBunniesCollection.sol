@@ -11,7 +11,7 @@ import "./IEncryptedFileToken.sol";
 import "./IEncryptedFileTokenUpgradeable.sol";
 import "./IEncryptedFileTokenCallbackReceiver.sol";
 
-contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IERC2981 {
+contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IERC2981 {
     using ECDSA for bytes32;
     
     /// @dev TokenData - struct with basic token data
@@ -34,7 +34,6 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         bool fraudReported;                                     // if fraud reported while finalizing transfer
         uint256 publicKeySetAt;                                 // public key set at
         uint256 passwordSetAt;                                  // password set at
-        uint256 blockTimestamp;
         bytes32 blockHash;
     }
 
@@ -45,7 +44,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     bytes32 public constant COMMON_WHITELIST_APPROVER_ROLE = keccak256("COMMON_WHITELIST_APPROVER");
     bytes32 public constant UNCOMMON_WHITELIST_APPROVER_ROLE = keccak256("UNCOMMON_WHITELIST_APPROVER");
     uint256 public constant ROYALTY_CEILING = PERCENT_MULTIPLIER / 2;  // 50%
-    uint256 public constant TOKES_LIMIT           = 10000;        // mint limit
+    uint256 public constant TOKENS_LIMIT           = 10000;        // mint limit
     uint256 public constant FREE_MINT_LIMIT = COMMON_TOKENS_LIMIT + UNCOMMON_TOKENS_LIMIT;
     uint256 public constant COMMON_TOKENS_LIMIT   = 6000;         // free mint common tokens limit
     uint256 public constant UNCOMMON_TOKENS_LIMIT = 1000;         // free mint uncommon tokens limit
@@ -146,8 +145,8 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         uint256 royalty,
         bytes memory _data
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(bytes(metaUri).length > 0, "Mark3dCollection: empty meta uri");
-        require(id < TOKES_LIMIT, "Mark3dCollection: limit reached");
+        require(bytes(metaUri).length > 0, "FileBunniesCollection: empty meta uri");
+        require(id < TOKENS_LIMIT, "FileBunniesCollection: limit reached");
         _mint(to, id, metaUri, royalty, _data);
     }
     
@@ -157,11 +156,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     /// @param count - tokens quantity to mint
     /// @param _data - additional token data list
     function mintBatchWithoutMeta(address to, uint256 startId, uint256 count, uint256 royalty, bytes[] memory _data) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(startId + count-1 < TOKES_LIMIT, "Mark3dCollection: number of tokens exceeds TOKES_LIMIT");
-        require(count == _data.length, "Mark3dCollection: _data list length must be equal to count");
+        require(startId + count-1 < TOKENS_LIMIT, "FileBunniesCollection: number of tokens exceeds TOKENS_LIMIT");
+        require(count == _data.length, "FileBunniesCollection: _data list length must be equal to count");
         uint256 id = startId;
         for (uint256 i = 0; i < count; i++) {
-            require(!_exists(id), "Mark3dCollection: token is already minted");
+            require(!_exists(id), "FileBunniesCollection: token is already minted");
             _mint(to, id, "", royalty, _data[i]);
             id++;
         }
@@ -170,7 +169,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     /// @dev burn function
     /// @param id - token id
     function burn(uint256 id) external {
-        require(ownerOf(id) == _msgSender(), "Mark3dCollection: not an owner of token");
+        require(ownerOf(id) == _msgSender(), "FileBunniesCollection: not an owner of token");
         _burn(id);
     }
 
@@ -187,10 +186,10 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         bytes calldata data,
         IEncryptedFileTokenCallbackReceiver callbackReceiver
     ) external {
-        require(_isApprovedOrOwner(_msgSender(), tokenId), "Mark3dCollection: caller is not token owner or approved");
-        require(transfers[tokenId].initiator == address(0), "Mark3dCollection: transfer for this token was already created");
+        require(_isApprovedOrOwner(_msgSender(), tokenId), "FileBunniesCollection: caller is not token owner or approved");
+        require(transfers[tokenId].initiator == address(0), "FileBunniesCollection: transfer for this token was already created");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), _msgSender(), to,
-            callbackReceiver, data, bytes(""), bytes(""), false, 0, 0, 0, 0);
+            callbackReceiver, data, bytes(""), bytes(""), false, 0, 0, 0);
         transferCounts[tokenId]++;
         
         emit TransferInit(tokenId, ownerOf(tokenId), to, transferCounts[tokenId]);
@@ -203,11 +202,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         uint256 tokenId,
         IEncryptedFileTokenCallbackReceiver callbackReceiver
     ) external {
-        require(_isApprovedOrOwner(_msgSender(), tokenId), "Mark3dCollection: caller is not token owner or approved");
-        require(transfers[tokenId].initiator == address(0), "Mark3dCollection: transfer for this token was already created");
-        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > salesStartTimestamp, "Mark3dCollection: transfer can't be done before sales start day");
+        require(_isApprovedOrOwner(_msgSender(), tokenId), "FileBunniesCollection: caller is not token owner or approved");
+        require(transfers[tokenId].initiator == address(0), "FileBunniesCollection: transfer for this token was already created");
+        require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > salesStartTimestamp, "FileBunniesCollection: transfer can't be done before sales start day");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), ownerOf(tokenId), address(0),
-            callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0, 0, 0);
+            callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0, 0);
         transferCounts[tokenId]++;
         
         emit TransferDraft(tokenId, ownerOf(tokenId), transferCounts[tokenId]);
@@ -222,29 +221,26 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         bytes calldata publicKey,
         bytes calldata data
     ) external {
-        require(publicKey.length > 0, "Mark3dCollection: empty public key");
+        require(publicKey.length > 0, "FileBunniesCollection: empty public key");
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(_msgSender() == info.initiator, "Mark3dCollection: permission denied");
-        require(info.to == address(0), "Mark3dCollection: draft already complete");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(_msgSender() == info.initiator, "FileBunniesCollection: permission denied");
+        require(info.to == address(0), "FileBunniesCollection: draft already complete");
 
-        if (data.length != 0) {
-            // if tokenId is within free mint range and it's initial purchase
-            if ((tokenId < FREE_MINT_LIMIT) && bytes(tokenUris[tokenId]).length == 0) {
-                address signer = uncommonWhitelistApprover;
-                if (tokenId < COMMON_TOKENS_LIMIT) {
-                    signer = commonWhitelistApprover;
-                }
-                bytes32 address_bytes = bytes32(uint256(uint160(to)));
-                require(address_bytes.toEthSignedMessageHash().recover(data) == signer, "Mark3dCollection: whitelist invalid signature");
-            }
+        // free mint and it's initial purchase
+        if (data.length != 0 && tokenId < FREE_MINT_LIMIT && bytes(tokenUris[tokenId]).length == 0) {
+          address signer = uncommonWhitelistApprover;
+          if (tokenId < COMMON_TOKENS_LIMIT) {
+              signer = commonWhitelistApprover;
+          }
+          bytes32 address_bytes = bytes32(uint256(uint160(to)));
+          require(address_bytes.toEthSignedMessageHash().recover(data) == signer, "FileBunniesCollection: whitelist invalid signature");
         }
         
         info.to = to;
         info.data = data;
         info.publicKey = publicKey;
         info.publicKeySetAt = block.timestamp;
-        info.blockTimestamp = block.timestamp;
         info.blockHash = blockhash(block.number-1);
 
         emit TransferDraftCompletion(tokenId, to);
@@ -255,12 +251,12 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
      * @dev See {IEncryptedFileToken-setTransferPublicKey}.
      */
     function setTransferPublicKey(uint256 tokenId, bytes calldata publicKey, uint256 transferNumber) external {
-        require(publicKey.length > 0, "Mark3dCollection: empty public key");
+        require(publicKey.length > 0, "FileBunniesCollection: empty public key");
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(info.to == _msgSender(), "Mark3dCollection: permission denied");
-        require(info.publicKey.length == 0, "Mark3dCollection: public key was already set");
-        require(transferNumber == transferCounts[tokenId], "Mark3dCollection: the transfer is not the latest transfer of this token");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(info.to == _msgSender(), "FileBunniesCollection: permission denied");
+        require(info.publicKey.length == 0, "FileBunniesCollection: public key was already set");
+        require(transferNumber == transferCounts[tokenId], "FileBunniesCollection: the transfer is not the latest transfer of this token");
         info.publicKey = publicKey;
         info.publicKeySetAt = block.timestamp;
         emit TransferPublicKeySet(tokenId, publicKey);
@@ -270,12 +266,12 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
      * @dev See {IEncryptedFileToken-approveTransfer}.
      */
     function approveTransfer(uint256 tokenId, bytes calldata encryptedPassword) external {
-        require(encryptedPassword.length > 0, "Mark3dCollection: empty password");
+        require(encryptedPassword.length > 0, "FileBunniesCollection: empty password");
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(ownerOf(tokenId) == _msgSender(), "Mark3dCollection: permission denied");
-        require(info.publicKey.length != 0, "Mark3dCollection: public key wasn't set yet");
-        require(info.encryptedPassword.length == 0, "Mark3dCollection: encrypted password was already set");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(ownerOf(tokenId) == _msgSender(), "FileBunniesCollection: permission denied");
+        require(info.publicKey.length != 0, "FileBunniesCollection: public key wasn't set yet");
+        require(info.encryptedPassword.length == 0, "FileBunniesCollection: encrypted password was already set");
         info.encryptedPassword = encryptedPassword;
         info.passwordSetAt = block.timestamp;
         emit TransferPasswordSet(tokenId, encryptedPassword);
@@ -286,11 +282,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
      */
     function finalizeTransfer(uint256 tokenId) external {
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(info.encryptedPassword.length != 0, "Mark3dCollection: encrypted password wasn't set yet");
-        require(!info.fraudReported, "Mark3dCollection: fraud was reported");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(info.encryptedPassword.length != 0, "FileBunniesCollection: encrypted password wasn't set yet");
+        require(!info.fraudReported, "FileBunniesCollection: fraud was reported");
         require(info.to == _msgSender() ||
-            (info.passwordSetAt + 24 hours < block.timestamp && info.from == _msgSender()), "Mark3dCollection: permission denied");
+            (info.passwordSetAt + 24 hours < block.timestamp && info.from == _msgSender()), "FileBunniesCollection: permission denied");
 
         // if initial purchase
         if (bytes(tokenUris[tokenId]).length == 0) {
@@ -311,17 +307,17 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         uint256 tokenId,
         bytes calldata privateKey
     ) external {
-        require(privateKey.length > 0, "Mark3dCollection: private key is empty");
+        require(privateKey.length > 0, "FileBunniesCollection: private key is empty");
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(info.to == _msgSender(), "Mark3dCollection: permission denied");
-        require(info.encryptedPassword.length != 0, "Mark3dCollection: encrypted password wasn't set yet");
-        require(!info.fraudReported, "Mark3dCollection: fraud was already reported");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(info.to == _msgSender(), "FileBunniesCollection: permission denied");
+        require(info.encryptedPassword.length != 0, "FileBunniesCollection: encrypted password wasn't set yet");
+        require(!info.fraudReported, "FileBunniesCollection: fraud was already reported");
 
         info.fraudReported = true;
         (bool decided, bool approve) = fraudDecider_.decide(tokenId,
             tokenUris[tokenId], info.publicKey, privateKey, info.encryptedPassword);
-        require(fraudLateDecisionEnabled || decided, "Mark3dCollection: late decision disabled");
+        require(fraudLateDecisionEnabled || decided, "FileBunniesCollection: late decision disabled");
         emit TransferFraudReported(tokenId);
 
         if (decided) {
@@ -347,11 +343,11 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         uint256 tokenId,
         bool approve
     ) external {
-        require(fraudLateDecisionEnabled, "Mark3dCollection: late decision disabled");
+        require(fraudLateDecisionEnabled, "FileBunniesCollection: late decision disabled");
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(_msgSender() == address(fraudDecider_), "Mark3dCollection: permission denied");
-        require(info.fraudReported, "Mark3dCollection: fraud was not reported");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(_msgSender() == address(fraudDecider_), "FileBunniesCollection: permission denied");
+        require(info.fraudReported, "FileBunniesCollection: fraud was not reported");
         if (address(info.callbackReceiver) != address(0)) {
             info.callbackReceiver.transferFraudDetected(tokenId, approve);
         }
@@ -376,34 +372,16 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
         uint256 tokenId
     ) external {
         TransferInfo storage info = transfers[tokenId];
-        require(info.initiator != address(0), "Mark3dCollection: transfer for this token wasn't created");
-        require(!info.fraudReported, "Mark3dCollection: fraud reported");
+        require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
+        require(!info.fraudReported, "FileBunniesCollection: fraud reported");
         require(_msgSender() == ownerOf(tokenId) || (info.to == address(0) && _msgSender() == info.initiator) ||
             (info.publicKeySetAt + 24 hours < block.timestamp && info.passwordSetAt == 0 && info.to == _msgSender()),
-            "Mark3dCollection: permission denied");
+            "FileBunniesCollection: permission denied");
         if (address(info.callbackReceiver) != address(0)) {
             info.callbackReceiver.transferCancelled(tokenId);
         }
         delete transfers[tokenId];
         emit TransferCancellation(tokenId);
-    }
-
-    /// @dev function for transferring minting rights for collection
-    function transferAdminRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        grantRole(DEFAULT_ADMIN_ROLE, to);
-        revokeRole(DEFAULT_ADMIN_ROLE, _msgSender());
-    }
-    
-    function transferCommonWhitelistApproverRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        revokeRole(COMMON_WHITELIST_APPROVER_ROLE, commonWhitelistApprover);
-        grantRole(COMMON_WHITELIST_APPROVER_ROLE, to);
-        commonWhitelistApprover = to;
-    }
-    
-    function transferUncommonWhitelistApproverRole(address to) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        revokeRole(UNCOMMON_WHITELIST_APPROVER_ROLE, uncommonWhitelistApprover);
-        grantRole(UNCOMMON_WHITELIST_APPROVER_ROLE, to);
-        uncommonWhitelistApprover = to;
     }
 
     function safeTransferFrom(address, address, uint256,
@@ -435,15 +413,15 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     /// @param metaUri - metadata uri
     /// @param data - additional token data
     function _mint(address to, uint256 id, string memory metaUri, uint256 royalty, bytes memory data) internal {
-        require(royalty <= ROYALTY_CEILING, "Mark3dCollection: royalty is too high");
+        require(royalty <= ROYALTY_CEILING, "FileBunniesCollection: royalty is too high");
         if (id < COMMON_TOKENS_LIMIT) {
-            require(commonTokensCount + 1 < COMMON_TOKENS_LIMIT, "Mark3dCollection: wrong id");
+            require(commonTokensCount + 1 < COMMON_TOKENS_LIMIT, "FileBunniesCollection: wrong id");
             commonTokensCount++;
         } else if (id < FREE_MINT_LIMIT) {
-            require(uncommonTokensCount + 1 < UNCOMMON_TOKENS_LIMIT, "Mark3dCollection: wrong id");
+            require(uncommonTokensCount + 1 < UNCOMMON_TOKENS_LIMIT, "FileBunniesCollection: wrong id");
             uncommonTokensCount++;
         } else {
-            require(payedTokensCount + 1 < PAYED_TOKENS_LIMIT, "Mark3dCollection: wrong id");
+            require(payedTokensCount + 1 < PAYED_TOKENS_LIMIT, "FileBunniesCollection: wrong id");
             payedTokensCount++;
         }
         tokensCount++;
@@ -498,7 +476,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
     // id range [7000, 10000) 
     function addPayedCids(uint256 startTokenId, string[] calldata cids) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 count = cids.length;
-        uint256 startId = TOKES_LIMIT - startTokenId;
+        uint256 startId = PAYED_TOKENS_LIMIT + startTokenId - TOKENS_LIMIT;
 
         if (startId > payedCids.length) revert StartIdExceedsCurrentLength();
         if (startId + count > PAYED_TOKENS_LIMIT) revert ExceedsLimitByRarity();
@@ -537,7 +515,7 @@ contract ACollection is IEncryptedFileToken, ERC721Enumerable, AccessControl, IE
             cidArray = payedCids;
         }
         uint256 cidId = prng(cidArray.length, 
-                                info.blockTimestamp, 
+                                info.publicKeySetAt,
                                 info.blockHash, 
                                 blockhash(block.number - 1), 
                                 address_bytes, 

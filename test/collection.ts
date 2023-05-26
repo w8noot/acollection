@@ -2,8 +2,8 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber as BN, Signer } from "ethers";
 import {
-  ACollection,
-  ACollection__factory,
+  FileBunniesCollection,
+  FileBunniesCollection__factory,
   FraudDeciderWeb2,
   FraudDeciderWeb2__factory,
 } from "../typechain-types";
@@ -12,12 +12,12 @@ import "@nomicfoundation/hardhat-chai-matchers";
 describe("Success transfer", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
     collectionInstance = await collectionFactory.deploy(
@@ -153,13 +153,13 @@ describe("Success transfer", async () => {
 describe("Transfer with fraud", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
     collectionInstance = await collectionFactory.deploy(
@@ -254,12 +254,12 @@ describe("Transfer with fraud", async () => {
 describe("Success transfer with freemint", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
     collectionInstance = await collectionFactory.deploy(
@@ -378,16 +378,16 @@ describe("Success transfer with freemint", async () => {
   });
 });
 
-describe("Transfer with fraud with freemint should yell", async () => {
+describe("Freemint with fraud not approved", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
     collectionInstance = await collectionFactory.deploy(
@@ -487,10 +487,20 @@ describe("Transfer with fraud with freemint should yell", async () => {
       .withArgs(BN.from(0));
   });
 
-  it("fraud decider yells", async () => {
+  it("fraud not approved", async () => {
     const tx = fraudDecider
       .connect(accounts[0])
       .lateDecision(collectionInstance.address, BN.from(0), false);
-    await expect(tx).to.revertedWith("FraudDeciderWeb2: report doesn't exist");
+    await expect(tx)
+      .to
+      .emit(collectionInstance, "TransferFraudDecided")
+      .withArgs(BN.from(0), false);
+    await expect(tx)
+      .to.emit(collectionInstance, "Transfer")
+      .withArgs(
+        await accounts[1].getAddress(),
+        await accounts[2].getAddress(),
+        BN.from(0)
+      );
   });
 });

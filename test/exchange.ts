@@ -4,8 +4,8 @@ import { BigNumber as BN, Signer } from "ethers";
 import {
   FraudDeciderWeb2,
   FraudDeciderWeb2__factory,
-  ACollection,
-  ACollection__factory,
+  FileBunniesCollection,
+  FileBunniesCollection__factory,
   Mark3dExchange,
   Mark3dExchange__factory,
 } from "../typechain-types";
@@ -16,14 +16,14 @@ const zeroAddress = "0x0000000000000000000000000000000000000000";
 describe("Trade token", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
   let exchangeInstance: Mark3dExchange;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
     const exchangeFactory = new Mark3dExchange__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
@@ -125,7 +125,7 @@ describe("Trade token", async () => {
   it("withdraw fee", async () => {
     const tx = await exchangeInstance
       .connect(accounts[0])
-      .withdrawFees(accounts[10].getAddress());
+      .withdrawFees(accounts[10].getAddress(), zeroAddress);
 
     await expect(tx).to.changeEtherBalance(accounts[10], BN.from(1000));
   });
@@ -134,16 +134,16 @@ describe("Trade token", async () => {
 describe("Trade token with whitelist", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
   let exchangeInstance: Mark3dExchange;
   let start: number;
 
   before(async () => {
-    start = Math.round(Date.now() / 1000) + 10000;
+    start = Math.round(Date.now() / 1000) + 20000;
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
     const exchangeFactory = new Mark3dExchange__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
@@ -238,8 +238,8 @@ describe("Trade token with whitelist", async () => {
     const discount = await exchangeInstance.whitelistDiscounts(
       collectionInstance.address
     );
-    await expect(deadline).to.equal(BN.from(start));
-    await expect(discount).to.equal(BN.from(10000));
+    expect(deadline).to.equal(BN.from(start));
+    expect(discount).to.equal(BN.from(10000));
   });
 
   it("whitelist deadline exceeds", async () => {
@@ -292,8 +292,8 @@ describe("Trade token with whitelist", async () => {
     const discount = await exchangeInstance.whitelistDiscounts(
       collectionInstance.address
     );
-    await expect(deadline).to.equal(BN.from(start + 30));
-    await expect(discount).to.equal(BN.from(10000));
+    expect(deadline).to.equal(BN.from(start + 30));
+    expect(discount).to.equal(BN.from(10000));
   });
 
   it("invalid signature", async () => {
@@ -373,14 +373,14 @@ describe("Trade token with whitelist", async () => {
 describe("Trade token with fraud not approved", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
   let exchangeInstance: Mark3dExchange;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
     const exchangeFactory = new Mark3dExchange__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
@@ -469,14 +469,14 @@ describe("Trade token with fraud not approved", async () => {
 describe("Trade token with fraud approved", async () => {
   let accounts: Signer[];
   let fraudDecider: FraudDeciderWeb2;
-  let collectionInstance: ACollection;
+  let collectionInstance: FileBunniesCollection;
   let exchangeInstance: Mark3dExchange;
 
   before(async () => {
     accounts = await ethers.getSigners();
 
     const fraudDeciderFactory = new FraudDeciderWeb2__factory(accounts[0]);
-    const collectionFactory = new ACollection__factory(accounts[0]);
+    const collectionFactory = new FileBunniesCollection__factory(accounts[0]);
     const exchangeFactory = new Mark3dExchange__factory(accounts[0]);
 
     fraudDecider = await fraudDeciderFactory.deploy();
