@@ -35,6 +35,7 @@ describe("Trade token", async () => {
       accounts[2].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
+      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -155,6 +156,7 @@ describe("Trade token with whitelist", async () => {
       accounts[0].getAddress(), // hardcoded signature was made with this address
       accounts[4].getAddress(),
       accounts[5].getAddress(),
+      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -392,6 +394,7 @@ describe("Trade token with fraud not approved", async () => {
       accounts[3].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
+      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -488,6 +491,7 @@ describe("Trade token with fraud approved", async () => {
       accounts[3].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
+      BN.from(1000),
       "0x",
       fraudDecider.address,
       true

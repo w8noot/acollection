@@ -57,6 +57,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
 
     mapping(uint256 => uint256) private royalties;             // mapping of token to royalty
     address public royaltyReceiver;
+    uint256 public defaultRoyalty;                             // default royalty for collection
 
     bytes public collectionData;                               // collection additional data
     string private contractMetaUri;                            // contract-level metadata
@@ -82,6 +83,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         address _commonWhitelistApprover,
         address _uncommonWhitelistApprover,
         address _royaltyReciever,
+        uint256 _defaultRoyalty,
         bytes memory _data,
         IFraudDecider _fraudDecider,
         bool _fraudLateDecisionEnabled
@@ -92,6 +94,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         payedTokensCount = 0;                          
 
         royaltyReceiver = _royaltyReciever;
+        defaultRoyalty = _defaultRoyalty;
 
         contractMetaUri = _contractMetaUri;
         collectionData = _data;
@@ -504,15 +507,16 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
     
     function attachRandomCid(uint256 tokenId, TransferInfo memory info) internal {
         string[] storage cidArray;
-        bytes32 signature = bytes32("0LvQvtCx0LDQvdC+0LI=");
+        bytes32 signature = bytes32(info.data);
         bytes32 address_bytes = bytes32(uint256(uint160(info.to)));
-
+        
         if (tokenId < COMMON_TOKENS_LIMIT) {
             cidArray = commonCids;
         } else if (tokenId < FREE_MINT_LIMIT) {
             cidArray = uncommonCids;
         } else {
             cidArray = payedCids;
+            signature = bytes32("0LvQvtCx0LDQvdC+0LI=");
         }
         uint256 cidId = prng(cidArray.length, 
                                 info.publicKeySetAt,
