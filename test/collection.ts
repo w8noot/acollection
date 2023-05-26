@@ -28,7 +28,6 @@ describe("Success transfer", async () => {
       accounts[3].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
-      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -171,7 +170,6 @@ describe("Transfer with fraud", async () => {
       accounts[3].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
-      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -272,7 +270,6 @@ describe("Success transfer with freemint", async () => {
       accounts[0].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
-      BN.from(1000),
       "0x",
       fraudDecider.address,
       true
@@ -401,7 +398,6 @@ describe("Freemint with fraud not approved", async () => {
       accounts[3].getAddress(),
       accounts[4].getAddress(),
       accounts[5].getAddress(),
-      BN.from(1000),
       "0x",
       fraudDecider.address,
       true

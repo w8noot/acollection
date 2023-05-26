@@ -57,7 +57,6 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
 
     mapping(uint256 => uint256) private royalties;             // mapping of token to royalty
     address public royaltyReceiver;
-    uint256 public defaultRoyalty;                             // default royalty for collection
 
     bytes public collectionData;                               // collection additional data
     string private contractMetaUri;                            // contract-level metadata
@@ -83,7 +82,6 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         address _commonWhitelistApprover,
         address _uncommonWhitelistApprover,
         address _royaltyReciever,
-        uint256 _defaultRoyalty,
         bytes memory _data,
         IFraudDecider _fraudDecider,
         bool _fraudLateDecisionEnabled
@@ -94,7 +92,6 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         payedTokensCount = 0;                          
 
         royaltyReceiver = _royaltyReciever;
-        defaultRoyalty = _defaultRoyalty;
 
         contractMetaUri = _contractMetaUri;
         collectionData = _data;
