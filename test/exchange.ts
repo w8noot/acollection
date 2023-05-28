@@ -163,6 +163,13 @@ describe("Trade token with whitelist", async () => {
     exchangeInstance = await exchangeFactory.deploy();
   });
 
+  it("set fee", async () => {
+    const tx = await exchangeInstance.setFee(BN.from(1000));
+    await expect(tx)
+      .to.emit(exchangeInstance, "FeeChanged")
+      .withArgs(BN.from(1000));
+  });
+
   it("mint", async () => {
     await collectionInstance
       .connect(accounts[1])
@@ -337,7 +344,7 @@ describe("Trade token with whitelist", async () => {
         "0xa1",
         BN.from(1),
         "0x1939d953cd4e47fe7e2f1e454ff366caf7e58d3a4a6a4a0e6a6ce2c4b22fdcbe0a460e1730fc0b538f4f4e167ef1b9307d403fe1af34e2b1ef1904d6d7750c831c",
-        "0x",
+        "0x1939d953cd4e47fe7e2f1e454ff366caf7e58d3a4a6a4a0e6a6ce2c4b22fdcbe0a460e1730fc0b538f4f4e167ef1b9307d403fe1af34e2b1ef1904d6d7750c831c",
         {
           value: BN.from(10000),
         }
@@ -358,7 +365,7 @@ describe("Trade token with whitelist", async () => {
         "0xa1",
         BN.from(1),
         "0x1939d953cd4e47fe7e2f1e454ff366caf7e58d3a4a6a4a0e6a6ce2c4b22fdcbe0a460e1730fc0b538f4f4e167ef1b9307d403fe1af34e2b1ef1904d6d7750c831c",
-        "0x",
+        "0x1939d953cd4e47fe7e2f1e454ff366caf7e58d3a4a6a4a0e6a6ce2c4b22fdcbe0a460e1730fc0b538f4f4e167ef1b9307d403fe1af34e2b1ef1904d6d7750c831c",
         {
           value: BN.from(0),
         }
@@ -367,6 +374,111 @@ describe("Trade token with whitelist", async () => {
     await expect(tx)
       .to.emit(collectionInstance, "TransferDraftCompletion")
       .withArgs(BN.from(1), await accounts[2].getAddress());
+  });
+
+  it("set encrypted password", async () => {
+    const tx = await collectionInstance
+      .connect(accounts[1])
+      .approveTransfer(BN.from(1), "0x34");
+    await expect(tx)
+      .to.emit(collectionInstance, "TransferPasswordSet")
+      .withArgs(BN.from(1), "0x34");
+  });
+
+  it("add cids", async () => {
+    await collectionInstance
+      .connect(accounts[1])
+      .addCommonCids(BN.from(0), ["cm meta 1"]);
+
+    expect(await collectionInstance.connect(accounts[1]).commonCids(0)).to.eq(
+      "cm meta 1"
+    );
+  });
+
+  it("finalize transfer", async () => {
+    const tx = await collectionInstance
+      .connect(accounts[2])
+      .finalizeTransfer(BN.from(1));
+    await expect(tx)
+      .to.emit(collectionInstance, "TransferFinished")
+      .withArgs(BN.from(1));
+    await expect(tx)
+      .to.emit(collectionInstance, "Transfer")
+      .withArgs(
+        await accounts[1].getAddress(),
+        await accounts[2].getAddress(),
+        BN.from(1)
+      );
+
+    let throwFlag = true;
+    try {
+      // should throw. CommonCid array is empty
+      await collectionInstance.connect(accounts[1]).commonCids(BN.from(0));
+      throwFlag = false;
+    } catch {}
+    expect(throwFlag).to.eq(true);
+
+    expect(await collectionInstance.connect(accounts[1]).tokenUris(1)).to.eq(
+      "cm meta 1"
+    );
+
+    const price = 10000;
+    const fee = price / 10;
+    const royalty = (price - fee) / 10;
+    await expect(tx).to.changeEtherBalance(
+      accounts[1],
+      BN.from(price - fee - royalty)
+    );
+    await expect(tx).to.changeEtherBalance(
+      exchangeInstance.address,
+      BN.from(fee - price)
+    );
+    await expect(tx).to.changeEtherBalance(accounts[5], BN.from(royalty));
+  });
+
+  it("set free tokens start sales date", async () => {
+    await collectionInstance
+      .connect(accounts[1])
+      .setFreeTokensSalesStartTimestamp(start + 50);
+  });
+
+  it("approve", async () => {
+    await collectionInstance
+      .connect(accounts[2])
+      .setApprovalForAll(exchangeInstance.address, true);
+  });
+
+  it("create order of free mint token before sales start day", async () => {
+    await ethers.provider.send("evm_mine", [start + 40]);
+    const tx = exchangeInstance
+      .connect(accounts[2])
+      .placeOrder(
+        collectionInstance.address,
+        BN.from(1),
+        BN.from(10000),
+        zeroAddress
+      );
+    await expect(tx).to.revertedWith(
+      "FileBunniesCollection: transfer can't be done before sales start day"
+    );
+  });
+
+  it("set free tokens start sales date", async () => {
+    await collectionInstance
+      .connect(accounts[1])
+      .setFreeTokensSalesStartTimestamp(start + 40);
+  });
+
+  it("create order of free mint token after sales start day", async () => {
+    await ethers.provider.send("evm_mine", [start + 50]);
+    await exchangeInstance
+      .connect(accounts[2])
+      .placeOrder(
+        collectionInstance.address,
+        BN.from(1),
+        BN.from(10000),
+        zeroAddress
+      );
   });
 });
 

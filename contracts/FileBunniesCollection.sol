@@ -72,6 +72,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
     IFraudDecider private fraudDecider_;                       // fraud decider
     uint256 public finalizeTransferTimeout;                    // Time before transfer finalizes automatically 
     uint256 private salesStartTimestamp;                       // Time when users can start transfer tokens 
+    uint256 private freeTokensSalesStartTimestamp;             // Time when users can start transfer free minted tokens 
     uint256 private nonce = 0;
 
     constructor(
@@ -99,6 +100,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         fraudLateDecisionEnabled = _fraudLateDecisionEnabled;
         finalizeTransferTimeout = 24 hours;
         salesStartTimestamp = block.timestamp - 1 minutes;
+        freeTokensSalesStartTimestamp = block.timestamp - 1 minutes;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(COMMON_WHITELIST_APPROVER_ROLE, _commonWhitelistApprover);
@@ -205,6 +207,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         require(_isApprovedOrOwner(_msgSender(), tokenId), "FileBunniesCollection: caller is not token owner or approved");
         require(transfers[tokenId].initiator == address(0), "FileBunniesCollection: transfer for this token was already created");
         require(hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > salesStartTimestamp, "FileBunniesCollection: transfer can't be done before sales start day");
+        require(tokenId >= FREE_MINT_LIMIT || hasRole(DEFAULT_ADMIN_ROLE, _msgSender()) || block.timestamp > freeTokensSalesStartTimestamp, "FileBunniesCollection: transfer can't be done before sales start day");
         transfers[tokenId] = TransferInfo(tokenId, _msgSender(), ownerOf(tokenId), address(0),
             callbackReceiver, bytes(""), bytes(""), bytes(""), false, 0, 0, 0);
         transferCounts[tokenId]++;
@@ -227,14 +230,17 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         require(_msgSender() == info.initiator, "FileBunniesCollection: permission denied");
         require(info.to == address(0), "FileBunniesCollection: draft already complete");
 
-        // free mint and it's initial purchase
-        if (data.length != 0 && tokenId < FREE_MINT_LIMIT && bytes(tokenUris[tokenId]).length == 0) {
-          address signer = uncommonWhitelistApprover;
-          if (tokenId < COMMON_TOKENS_LIMIT) {
-              signer = commonWhitelistApprover;
-          }
-          bytes32 address_bytes = bytes32(uint256(uint160(to)));
-          require(address_bytes.toEthSignedMessageHash().recover(data) == signer, "FileBunniesCollection: whitelist invalid signature");
+        if (tokenId < FREE_MINT_LIMIT) {
+            // free mint and it's initial purchase
+            if (bytes(tokenUris[tokenId]).length == 0) {
+                require(data.length != 0, "Signiture wasn't provided");
+                address signer = uncommonWhitelistApprover;
+                if (tokenId < COMMON_TOKENS_LIMIT) {
+                    signer = commonWhitelistApprover;
+                }
+                bytes32 address_bytes = bytes32(uint256(uint160(to)));
+                require(address_bytes.toEthSignedMessageHash().recover(data) == signer, "FileBunniesCollection: whitelist invalid signature");
+            }
         }
         
         info.to = to;
@@ -286,7 +292,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         require(info.encryptedPassword.length != 0, "FileBunniesCollection: encrypted password wasn't set yet");
         require(!info.fraudReported, "FileBunniesCollection: fraud was reported");
         require(info.to == _msgSender() ||
-            (info.passwordSetAt + 24 hours < block.timestamp && info.from == _msgSender()), "FileBunniesCollection: permission denied");
+            (info.passwordSetAt + finalizeTransferTimeout < block.timestamp && info.from == _msgSender()), "FileBunniesCollection: permission denied");
 
         // if initial purchase
         if (bytes(tokenUris[tokenId]).length == 0) {
@@ -375,7 +381,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
         require(info.initiator != address(0), "FileBunniesCollection: transfer for this token wasn't created");
         require(!info.fraudReported, "FileBunniesCollection: fraud reported");
         require(_msgSender() == ownerOf(tokenId) || (info.to == address(0) && _msgSender() == info.initiator) ||
-            (info.publicKeySetAt + 24 hours < block.timestamp && info.passwordSetAt == 0 && info.to == _msgSender()),
+            (info.publicKeySetAt + finalizeTransferTimeout < block.timestamp && info.passwordSetAt == 0 && info.to == _msgSender()),
             "FileBunniesCollection: permission denied");
         if (address(info.callbackReceiver) != address(0)) {
             info.callbackReceiver.transferCancelled(tokenId);
@@ -405,6 +411,10 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
 
     function setSalesStartTimestamp(uint256 newTimestamp) external onlyRole(DEFAULT_ADMIN_ROLE) {
         salesStartTimestamp = newTimestamp;
+    }
+    
+    function setFreeTokensSalesStartTimestamp(uint256 newTimestamp) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        freeTokensSalesStartTimestamp = newTimestamp;
     }
 
     /// @dev mint function for using in inherited contracts
@@ -515,6 +525,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
             cidArray = payedCids;
             signature = bytes32("0LvQvtCx0LDQvdC+0LI=");
         }
+        require(cidArray.length > 0, "FileBunniedCollection: cid array is empty");
         uint256 cidId = prng(cidArray.length, 
                                 info.publicKeySetAt,
                                 info.blockHash, 
