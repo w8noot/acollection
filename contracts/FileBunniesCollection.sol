@@ -55,7 +55,7 @@ contract FileBunniesCollection is IEncryptedFileToken, ERC721Enumerable, AccessC
     string[] public uncommonCids; 
     string[] public payedCids;
 
-    mapping(uint256 => uint256) private royalties;             // mapping of token to royalty
+    mapping(uint256 => uint256) public royalties;             // mapping of token to royalty
     address public royaltyReceiver;
 
     bytes public collectionData;                               // collection additional data

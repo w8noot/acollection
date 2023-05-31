@@ -94,13 +94,13 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
         Order storage order = orders[token][tokenId];
         require(order.price != 0, "Mark3dExchange: order doesn't exist");
         require(!order.fulfilled, "Mark3dExchange: order was already fulfilled");
+        require(whitelistDeadlines[token] == 0 || whitelistDeadlines[token] < block.timestamp, "Mark3dExchange: whitelist period");
         if (order.currency != IERC20(address(0))) {
             require(order.currency.allowance(_msgSender(), address(this)) >= order.price, "Mark3dExchange: allowance must be >= price");
             order.currency.safeTransferFrom(_msgSender(), address(this), order.price);
         } else {
             require(msg.value == order.price, "Mark3dExchange: value must equal");
         }
-        require(whitelistDeadlines[token] == 0 || whitelistDeadlines[token] < block.timestamp, "Mark3dExchange: whitelist period");
         order.receiver = payable(_msgSender());
         order.fulfilled = true;
         order.token.completeTransferDraft(order.tokenId, order.receiver, publicKey, data);
@@ -218,7 +218,6 @@ contract Mark3dExchange is IEncryptedFileTokenCallbackReceiver, Context, Ownable
     }
 
     function withdrawFees(address payable to, IERC20 currency) external onlyOwner {
-        // require(accumulatedFees > 0 || tokensReceived.length > 0, "Mark3dExchange: No fee to withdraw");
         if (currency == IERC20(address(0))) {
             require(accumulatedFees > 0, "Mark3dExchange: No fee to withdraw");
             uint256 amount = accumulatedFees;
